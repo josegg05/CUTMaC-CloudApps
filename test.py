@@ -82,4 +82,27 @@ image_2=image_2.permute(2,1,0)
 print(image_2)
 
 #%%
-10e-4
+import torch
+a = []
+for i in range(10):
+    a.append(torch.rand(1, 100, 100))
+
+b = torch.Tensor(10, 100, 100)
+print(b.shape)
+torch.cat(a, out=b)
+print(b.shape)
+
+#%%
+import numpy as np
+
+lala=np.array([1,2,3])
+lele=np.array([4,5,6])
+lolo=np.array([7,8,9])
+
+lista=[]
+lista.append(lala)
+lista.append(lele)
+lista.append(lele)
+print(lista)
+
+
