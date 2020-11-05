@@ -97,9 +97,9 @@ print(cali_dataset_2015.head())
 print(cali_dataset_2015.describe())
 
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImgSerieDataset(train_data_file_name)
+train_set = STImgSerieDataset(train_data_file_name, data_size=100000)
 test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-test_set = STImgSerieDataset(test_data_file_name)
+test_set = STImgSerieDataset(test_data_file_name, data_size=100000)
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of test_set = {len(test_set)}")
 
@@ -173,6 +173,7 @@ for epoch in range(10):  # 10 epochs
         if batch_idx % 100 == 0:
             print(losses)
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses), end - start))
+            losses = []
             start = time.time()
     scheduler.step()
 
@@ -189,6 +190,8 @@ for epoch in range(10):  # 10 epochs
             inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
             error_test = e_rcnn.initError(batch_size)
+            error_test = error_test.to(device)
+            loss = torch.zeros(1, requires_grad=True)
             for i in range(inputs_test.shape[0]):
                 outputs_test = e_rcnn(inputs_test[i], error_test.detach())
                 err_i = outputs_test - targets_test[i]
@@ -198,6 +201,6 @@ for epoch in range(10):  # 10 epochs
             losses_test.append(loss.item())
             if batch_idx % 100 == 0:
                 print('Batch Index : %d Loss : %.3f' % (batch_idx, np.mean(losses_test)))
-
+                losses_test = []
     print('--------------------------------------------------------------')
     e_rcnn.train()

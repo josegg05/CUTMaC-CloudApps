@@ -13,14 +13,14 @@ class STImageDataset(torch.utils.data.Dataset):
     def __init__(self, data_file_name, image_size=72, data_size=0, pred_window=3, transforms=None):
         self.data = pd.read_csv(data_file_name)
         self.data = self.data.to_numpy()
+        self.detect_num = int(np.max(self.data[:, 1]) + 1)
 
         if data_size == 0:
             data_size = len(np.unique(self.data[:, 0])) - image_size - pred_window
             # print(len(np.unique(self.data[:,0])))
         else:
-            self.data = self.data[:data_size + image_size]
+            self.data = self.data[:(data_size + image_size + pred_window) * self.detect_num]
 
-        self.detect_num = int(np.max(self.data[:, 1]) + 1)
         self.image_size = image_size
         self.data_size = data_size
         self.pred_window = pred_window
@@ -188,7 +188,7 @@ for epoch in range(10):  # 10 epochs
 
         if batch_idx % 100 == 0:
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses), end - start))
-
+            losses = []
             start = time.time()
     scheduler.step()
 
@@ -199,7 +199,8 @@ for epoch in range(10):  # 10 epochs
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
-            targets = targets[2]
+            targets = targets[:, 2]
+            targets = torch.unsqueeze(targets, 1)
             inputs, targets = inputs.to(device), targets.to(device)
 
             outputs = model(inputs.float())  # Forward pass
@@ -208,7 +209,7 @@ for epoch in range(10):  # 10 epochs
             losses_test.append(loss.item())
 
             if batch_idx % 100 == 0:
-                print('Batch Index : %d Loss : %.3f' % (batch_idx, np.mean(losses)))
-
+                print('Batch Index : %d Loss : %.3f' % (batch_idx, np.mean(losses_test)))
+                losses_test = []
         print('--------------------------------------------------------------')
     model.train()
