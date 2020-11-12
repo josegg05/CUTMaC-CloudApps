@@ -105,4 +105,67 @@ lista.append(lele)
 lista.append(lele)
 print(lista)
 
+#%%
+import matplotlib.pyplot as plt
 
+lala = [1000,100,30,10,8,20,5,2,1,0]
+lolo = [2000,100,30,10,8,20,5,2,1,0]
+plt.figure(1)
+plt.plot(lala)
+plt.title("Training MSE")
+plt.ylabel("MSE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("train_mse.png")
+
+plt.figure(2)
+plt.plot(lolo)
+plt.title("Testing MSE")
+plt.ylabel("MSE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("test_mse.png")
+plt.show()
+
+#%%
+# formas de obtener el índice del menor valor
+import torch
+validation_error = torch.tensor([20, 18, 3, 35, 5])
+print('1: min = ', (validation_error == validation_error.min()).nonzero().item()) # 1
+print('2:', validation_error.min(0))
+print('min = ', validation_error.min(0)[1].item()) # 2
+
+#%%
+
+import torch
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self):
+        self.data = [[0,1],[2,3],[4,5],[6,7],[8,9],[10]]
+    def __len__(self):
+        return 8
+    def __getitem__(self, idx):
+        if idx % 2 == 0:
+            return [self.data[int(idx / 2)][0], self.data[int(idx / 2)][1]]
+        else:
+            return [self.data[int(idx / 2)][1], self.data[int((idx / 2)) + 1][0]]
+
+s=Dataset()
+print(s[0])
+print(s[1])
+valid_s, test_s, extra = torch.utils.data.random_split(s, [4, 2, len(s)-6], generator=torch.Generator().manual_seed(42))
+
+print(len(valid_s))
+
+
+
+valid_loader= torch.utils.data.DataLoader(valid_s,
+                                     batch_size=1, shuffle=False,
+                                     num_workers=0)
+test_loader= torch.utils.data.DataLoader(test_s,
+                                     batch_size=1, shuffle=False,
+                                     num_workers=0)
+for batch_idx, inputs in enumerate(valid_loader):
+    print(batch_idx," and ", inputs)
+
+for batch_idx, inputs in enumerate(test_loader):
+    print(batch_idx, " and ", inputs)

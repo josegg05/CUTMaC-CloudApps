@@ -1,3 +1,4 @@
+#%%
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -5,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 import time
+import sys
 
 
 class STImgSerieDataset(torch.utils.data.Dataset):
@@ -12,6 +14,8 @@ class STImgSerieDataset(torch.utils.data.Dataset):
         self.data = pd.read_csv(data_file_name)
         self.data = self.data.to_numpy()
         self.detect_num = int(np.max(self.data[:, 1]) + 1)
+        self.mean = np.mean(self.data, axis=0)[2:]
+        self.stddev = np.std(self.data, axis=0)[2:]
 
         if data_size == 0:
             data_size = len(np.unique(self.data[:, 0])) - seq_size - image_size - pred_window
@@ -36,8 +40,9 @@ class STImgSerieDataset(torch.utils.data.Dataset):
             image = self.data[(idx + sq) * self.detect_num:(idx + sq + self.image_size) * self.detect_num, 2:]
             image = torch.from_numpy(image.astype(np.float32))
             image = torch.reshape(image, (self.image_size, self.detect_num, -1))
+            image = (image - self.mean) / self.stddev
             image = image.permute(2, 1, 0)
-            image = (image-image.mean())/image.std()
+            # image = (image-image.mean())/image.std()
             image.unsqueeze_(0)
             label = self.data[
                     ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2), 2:]
@@ -97,13 +102,17 @@ print(cali_dataset_2015.head())
 print(cali_dataset_2015.describe())
 
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImgSerieDataset(train_data_file_name, data_size=100000)
-test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-test_set = STImgSerieDataset(test_data_file_name, data_size=100000)
+train_set = STImgSerieDataset(train_data_file_name)
+train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(5))
+val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+val_test_set = STImgSerieDataset(val_test_data_file_name)
+valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
+print(f"Size of valid_set = {len(valid_set)}")
 print(f"Size of test_set = {len(test_set)}")
 
-image, label = train_set[0]
+#%%
+image, label = valid_set[0]
 print(image.shape)
 print(image[0])
 print(image[0].max())
@@ -111,6 +120,7 @@ print(image[0].mean())
 print(label.shape)
 print(label)
 
+#%%
 n_hidden = 6
 e_rcnn = eRCNN(3, n_hidden, 1)
 
@@ -118,18 +128,25 @@ e_rcnn = eRCNN(3, n_hidden, 1)
 # Define Dataloader
 batch_size = 50
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
+valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     #Check whether a GPU is present.
-device = "cpu"
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     #Check whether a GPU is present.
+# device = "cpu"
 e_rcnn.to(device)  # Put the network on GPU if present
 
 criterion = nn.MSELoss()  # L2 Norm
+criterion2 = nn.L1Loss()
 optimizer = optim.Adam(e_rcnn.parameters(), lr=1e-3)  # ADAM with lr=10^-4
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.1)  # exponential decay every epoch = 2000iter
 
+# sys.stdout = open("log.txt", "w")
 torch.cuda.empty_cache()
+loss_plot_train = []
+loss_plot_test = []
+loss_plot_test2 = []
 for epoch in range(10):  # 10 epochs
+    print(f"******************Epoch {epoch}*******************\n\n")
     torch.autograd.set_detect_anomaly(True)
     losses = []
     # Train
@@ -173,16 +190,19 @@ for epoch in range(10):  # 10 epochs
         if batch_idx % 100 == 0:
             print(losses)
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses), end - start))
+            loss_plot_train.append(np.mean(losses))
             losses = []
             start = time.time()
     scheduler.step()
+    torch.save(e_rcnn.state_dict(), "state_dict_model.pt")
 
     # Evaluate
     e_rcnn.eval()
     total = 0
     losses_test = []
+    losses_test2 = []
     with torch.no_grad():
-        for batch_idx, (inputs_test, targets_test) in enumerate(test_loader):
+        for batch_idx, (inputs_test, targets_test) in enumerate(valid_loader):
             inputs_test = inputs_test.permute(1, 0, 2, 3, 4)
             targets_test = targets_test.permute(1, 0, 2)
             targets_test = targets_test[:, :, 2]
@@ -198,9 +218,47 @@ for epoch in range(10):  # 10 epochs
                 error_test = torch.cat((error_test[:, 1:], err_i), 1)
 
             loss = criterion(outputs_test, targets_test[i])
+            loss2 = criterion2(outputs_test, targets_test[i])
             losses_test.append(loss.item())
+            losses_test2.append(loss2.item())
             if batch_idx % 100 == 0:
-                print('Batch Index : %d Loss : %.3f' % (batch_idx, np.mean(losses_test)))
+                print('Batch Index : %d MSE : %.3f' % (batch_idx, np.mean(losses_test)))
+                print('Batch Index : %d MAE : %.3f' % (batch_idx, np.mean(losses_test2)))
+                # loss_plot_test.append(np.mean(losses_test))
+                # loss_plot_test2.append(np.mean(losses_test2))
+                loss_plot_test.append(losses_test)
+                loss_plot_test2.append(losses_test2)
                 losses_test = []
+                losses_test2 = []
     print('--------------------------------------------------------------')
     e_rcnn.train()
+
+# Plot the training and testing loss
+plt.figure(1)
+plt.plot(loss_plot_train)
+plt.title("Training MSE")
+plt.ylabel("MSE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("train_mse.png")
+
+flatList_test1 = [item for elem in loss_plot_test for item in elem]
+plt.figure(2)
+plt.plot(flatList_test1)
+plt.title("Testing MSE")
+plt.ylabel("MSE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("test_mse.png")
+
+flatList_test2 = [item for elem in loss_plot_test2 for item in elem]
+plt.figure(3)
+plt.plot(flatList_test2)
+plt.title("Testing MAE")
+plt.ylabel("MAE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("test_mae.png")
+plt.show()
+
+# sys.stdout.close()
