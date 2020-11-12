@@ -149,6 +149,7 @@ for epoch in range(10):  # 10 epochs
     print(f"******************Epoch {epoch}*******************\n\n")
     torch.autograd.set_detect_anomaly(True)
     losses = []
+
     # Train
     start = time.time()
     for batch_idx, (inputs, targets) in enumerate(train_loader):

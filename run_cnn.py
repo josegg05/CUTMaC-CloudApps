@@ -14,6 +14,8 @@ class STImageDataset(torch.utils.data.Dataset):
         self.data = pd.read_csv(data_file_name)
         self.data = self.data.to_numpy()
         self.detect_num = int(np.max(self.data[:, 1]) + 1)
+        self.mean = np.mean(self.data, axis=0)[2:]
+        self.stddev = np.std(self.data, axis=0)[2:]
 
         if data_size == 0:
             data_size = len(np.unique(self.data[:, 0])) - image_size - pred_window
@@ -33,8 +35,9 @@ class STImageDataset(torch.utils.data.Dataset):
         image = self.data[idx * self.detect_num:(idx + self.image_size) * self.detect_num, 2:]
         image = torch.from_numpy(image.astype(np.float32))
         image = torch.reshape(image, (self.image_size, self.detect_num, -1))
+        image = (image - self.mean) / self.stddev
         image = image.permute(2, 1, 0)
-        image = (image - image.mean()) / image.std()
+        #image = (image - image.mean()) / image.std()
         label = self.data[((idx + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2), 2:]
         label = torch.from_numpy(label.astype(np.float32))
 
@@ -126,9 +129,12 @@ class CNN(nn.Module):
 # Running the program
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 train_set = STImageDataset(train_data_file_name)
-test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-test_set = STImageDataset(test_data_file_name)
+train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(5))
+val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+val_test_set = STImageDataset(val_test_data_file_name)
+valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
+print(f"Size of valid_set = {len(valid_set)}")
 print(f"Size of test_set = {len(test_set)}")
 
 # %%
@@ -154,18 +160,28 @@ model = model.float()
 # %%
 ## Training the CNN
 # Define Dataloader
-train_loader = torch.utils.data.DataLoader(train_set, batch_size=50, shuffle=True)
-test_loader = torch.utils.data.DataLoader(test_set, batch_size=50, shuffle=True)
+batch_size = 50
+train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
+valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
+test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 
 model.to(device)  # Put the network on GPU if present
 
 criterion = nn.MSELoss()  # L2 Norm
+criterion2 = nn.L1Loss()
 optimizer = optim.Adam(model.parameters(), lr=1e-3)  # ADAM with lr=10^-4
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.1)  # exponential decay every epoch = 2000iter
 
+# sys.stdout = open("log.txt", "w")
+torch.cuda.empty_cache()
+loss_plot_train = []
+loss_plot_test = []
+loss_plot_test2 = []
 for epoch in range(10):  # 10 epochs
+    print(f"******************Epoch {epoch}*******************\n\n")
+    #torch.autograd.set_detect_anomaly(True)
     losses = []
 
     # Train
@@ -188,6 +204,7 @@ for epoch in range(10):  # 10 epochs
 
         if batch_idx % 100 == 0:
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses), end - start))
+            loss_plot_train.append(np.mean(losses))
             losses = []
             start = time.time()
     scheduler.step()
@@ -196,20 +213,56 @@ for epoch in range(10):  # 10 epochs
     model.eval()
     total = 0
     losses_test = []
+    losses_test2 = []
 
     with torch.no_grad():
-        for batch_idx, (inputs, targets) in enumerate(test_loader):
+        for batch_idx, (inputs, targets) in enumerate(valid_loader):
             targets = targets[:, 2]
             targets = torch.unsqueeze(targets, 1)
             inputs, targets = inputs.to(device), targets.to(device)
 
             outputs = model(inputs.float())  # Forward pass
             loss = criterion(outputs, targets)  # Compute the Loss
+            loss2 = criterion2(outputs, targets)
 
             losses_test.append(loss.item())
-
+            losses_test2.append(loss2.item())
             if batch_idx % 100 == 0:
                 print('Batch Index : %d Loss : %.3f' % (batch_idx, np.mean(losses_test)))
+                print('Batch Index : %d MAE : %.3f' % (batch_idx, np.mean(losses_test2)))
+                loss_plot_test.append(losses_test)
+                loss_plot_test2.append(losses_test2)
                 losses_test = []
+                losses_test2 = []
         print('--------------------------------------------------------------')
     model.train()
+
+# Plot the training and testing loss
+plt.figure(1)
+plt.plot(loss_plot_train)
+plt.title("Training MSE")
+plt.ylabel("MSE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("train_mse.png")
+
+flatList_test1 = [item for elem in loss_plot_test for item in elem]
+plt.figure(2)
+plt.plot(flatList_test1)
+plt.title("Testing MSE")
+plt.ylabel("MSE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("test_mse.png")
+
+flatList_test2 = [item for elem in loss_plot_test2 for item in elem]
+plt.figure(3)
+plt.plot(flatList_test2)
+plt.title("Testing MAE")
+plt.ylabel("MAE")
+plt.xlabel("Bacthx100")
+plt.grid()
+plt.savefig("test_mae.png")
+plt.show()
+
+# sys.stdout.close()
