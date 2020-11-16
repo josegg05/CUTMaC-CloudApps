@@ -1,4 +1,4 @@
-#%%
+# %%
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +10,8 @@ import sys
 
 
 class STImgSerieDataset(torch.utils.data.Dataset):
-    def __init__(self, data_file_name, seq_size=72, image_size=72, data_size=0, pred_window=3, transforms=None):
+    def __init__(self, data_file_name, label_conf='mid', target=3, seq_size=72, image_size=72, data_size=0, pred_window=3,
+                 transforms=None):
         self.data = pd.read_csv(data_file_name)
         self.data = self.data.to_numpy()
         self.detect_num = int(np.max(self.data[:, 1]) + 1)
@@ -29,6 +30,8 @@ class STImgSerieDataset(torch.utils.data.Dataset):
         self.data_size = data_size
         self.pred_window = pred_window
         self.transforms = transforms
+        self.label_conf = label_conf
+        self.target = target
 
     def __len__(self):
         return self.data_size
@@ -44,9 +47,47 @@ class STImgSerieDataset(torch.utils.data.Dataset):
             image = image.permute(2, 1, 0)
             # image = (image-image.mean())/image.std()
             image.unsqueeze_(0)
-            label = self.data[
-                    ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2), 2:]
-            label = torch.from_numpy(label.astype(np.float32))
+            if self.target != 3:
+                if self.label_conf == 'mid':
+                    label = self.data[
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2),
+                            2+self.target]
+                    label = np.array(label)
+                    label = torch.from_numpy(label.astype(np.float32))
+                    label.unsqueeze_(-1)
+                elif self.label_conf == 'all':
+                    label = self.data[
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num):
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + self.detect_num,
+                            2+self.target]
+                    label = torch.from_numpy(label.astype(np.float32))
+                else:
+                    label = self.data[
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + int(self.label_conf),
+                            2+self.target]
+                    label = np.array(label)
+                    label = torch.from_numpy(label.astype(np.float32))
+                    label.unsqueeze_(-1)
+            else:
+                if self.label_conf == 'mid':
+                    label = self.data[
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2),
+                            2:]
+                    label = torch.from_numpy(label.astype(np.float32))
+                elif self.label_conf == 'all':
+                    label = self.data[
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num):
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + self.detect_num,
+                            2:]
+                    label = torch.from_numpy(label.astype(np.float32))
+                    label = torch.reshape(label, (1, -1))
+                    label.squeeze_()
+                else:
+                    label = self.data[
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num) + int(self.label_conf),
+                            2:]
+                    label = torch.from_numpy(label.astype(np.float32))
+            # print(f'The label shape is:{label.shape}')
             label.unsqueeze_(0)
             image_seq.append(image)
             labels_seq.append(label)
@@ -101,28 +142,39 @@ cali_dataset_2015 = pd.read_csv("datasets/california_paper_eRCNN/I5-N-3/2015.csv
 print(cali_dataset_2015.head())
 print(cali_dataset_2015.describe())
 
+label_conf = 'all'
+target = 2  # target: 0-Flow, 1-Occ, 2-Speed, 3-All
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImgSerieDataset(train_data_file_name)
-train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(5))
+train_set = STImgSerieDataset(train_data_file_name, label_conf=label_conf, target=target)  # target: 0-Flow, 1-Occ, 2-Speed, 3-All
+train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
+                                                 generator=torch.Generator().manual_seed(5))
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-val_test_set = STImgSerieDataset(val_test_data_file_name)
-valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(5))
+val_test_set = STImgSerieDataset(val_test_data_file_name, label_conf=label_conf, target=target)
+valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
+                                                           generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
 print(f"Size of test_set = {len(test_set)}")
 
-#%%
+
+# %%
 image, label = valid_set[0]
-print(image.shape)
-print(image[0])
-print(image[0].max())
-print(image[0].mean())
+#print(image.shape)
+#print(image[0])
+#print(image[0].max())
+#print(image[0].mean())
 print(label.shape)
 print(label)
 
-#%%
-n_hidden = 6
-e_rcnn = eRCNN(3, n_hidden, 1)
+# %%
+
+if label_conf == 'all':
+    detectors_pred = 27
+else:
+    detectors_pred = 1
+n_hidden = 6 * detectors_pred
+out = 1 * detectors_pred
+e_rcnn = eRCNN(3, n_hidden, out)
 
 ## Training eRCNN
 # Define Dataloader
@@ -131,7 +183,7 @@ train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shu
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     #Check whether a GPU is present.
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
 e_rcnn.to(device)  # Put the network on GPU if present
 
@@ -156,8 +208,8 @@ for epoch in range(10):  # 10 epochs
         inputs = inputs.permute(1, 0, 2, 3, 4)
         targets = targets.permute(1, 0, 2)
         # print(targets.shape)
-        targets = targets[:, :, 2]
-        targets = torch.unsqueeze(targets, 2)
+        # targets = targets[:, :, 2]  # no va ahora
+        # targets = torch.unsqueeze(targets, 2) # no va ahora
         # print(targets.shape)
         inputs, targets = inputs.to(device), targets.to(device)
 
@@ -174,7 +226,7 @@ for epoch in range(10):  # 10 epochs
         for i in range(inputs.shape[0]):
             outputs = e_rcnn(inputs[i], error.detach())
             err_i = outputs - targets[i]
-            error = torch.cat((error[:, 1:], err_i), 1)
+            error = torch.cat((error[:, detectors_pred:], err_i), 1)
             # loss = loss + criterion(outputs, targets[i])  # Loss function Option 2
 
         # loss = criterion(outputs, targets[-1])    # Compute the Loss
