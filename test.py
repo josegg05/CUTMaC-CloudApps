@@ -169,3 +169,30 @@ for batch_idx, inputs in enumerate(valid_loader):
 
 for batch_idx, inputs in enumerate(test_loader):
     print(batch_idx, " and ", inputs)
+
+#%%
+import json
+
+# define list with values
+basicList = [[1, 2], "Cape Town", 4.6]
+
+# open output file for writing
+with open('listfile.txt', 'w') as filehandle:
+    json.dump(basicList, filehandle)
+
+# open output file for reading
+with open('listfile.txt', 'r') as filehandle:
+    basicList2 = json.load(filehandle)
+
+print((basicList2[0][1]))
+
+#%%
+#Padding
+import torch
+lacaca = torch.Tensor([[[[1,2,3], [4,5,6]]]])
+print(lacaca.shape)
+pad = (0,0,0,0,14,15,0,0)
+#lacacapad = torch.nn.functional.pad(lacaca, pad, mode='constant', value=0)
+m = torch.nn.ZeroPad2d((0,0,0,0,14,15,0,0))
+lacacapad = m(lacaca)
+print(lacacapad.shape)

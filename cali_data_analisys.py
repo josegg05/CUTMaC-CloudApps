@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 import time
+import json
 import sys
 
 
@@ -287,13 +288,12 @@ for epoch in range(10):  # 10 epochs
     print('--------------------------------------------------------------')
     e_rcnn.train()
 
+
 with open(f'loss_plot_test_{target}.txt', 'w') as filehandle:
-    for listitem in loss_plot_test:
-        filehandle.write('%s\n' % listitem)
+    json.dump(loss_plot_test, filehandle)
 
 with open(f'loss_plot_test2_{target}.txt', 'w') as filehandle:
-    for listitem in loss_plot_test2:
-        filehandle.write('%s\n' % listitem)
+    json.dump(loss_plot_test2, filehandle)
 
 # Plot the training and testing loss
 plt.figure(1)
@@ -390,7 +390,7 @@ targets_test_oneshot = targets_test_oneshot.permute(1, 0)
 #img_target = (targets_test_oneshot/ outputs_test_oneshot.max())
 plt.figure()
 plt.imshow(outputs_test_oneshot.cpu())
-plt.savefig("img_out.png")
+plt.savefig(f"img_out_{target}.png")
 plt.show()
 plt.figure()
 plt.imshow(targets_test_oneshot.cpu())

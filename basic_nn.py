@@ -5,20 +5,17 @@ import torch
 import torch.nn as nn
 from torch import optim
 import time
-import random
 
 
 # %%
 ## Creating Image Dataset
 class STImageDataset(torch.utils.data.Dataset):
-    def __init__(self, data_file_name, mean, stddev, image_size=72, data_size=0, pred_window=3, transforms=None):
+    def __init__(self, data_file_name, image_size=72, data_size=0, pred_window=3, transforms=None):
         self.data = pd.read_csv(data_file_name)
         self.data = self.data.to_numpy()
         self.detect_num = int(np.max(self.data[:, 1]) + 1)
-        # self.mean = np.mean(self.data, axis=0)[2:]
-        # self.stddev = np.std(self.data, axis=0)[2:]
-        self.mean = mean
-        self.stddev = stddev
+        self.mean = np.mean(self.data, axis=0)[2:]
+        self.stddev = np.std(self.data, axis=0)[2:]
 
         if data_size == 0:
             data_size = len(np.unique(self.data[:, 0])) - image_size - pred_window
@@ -26,6 +23,7 @@ class STImageDataset(torch.utils.data.Dataset):
         else:
             self.data = self.data[:(data_size + image_size + pred_window) * self.detect_num]
 
+        self.var_num = self.data.shape[1] - 2
         self.image_size = image_size
         self.data_size = data_size
         self.pred_window = pred_window
@@ -37,10 +35,9 @@ class STImageDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         image = self.data[idx * self.detect_num:(idx + self.image_size) * self.detect_num, 2:]
         image = torch.from_numpy(image.astype(np.float32))
-        image = torch.reshape(image, (self.image_size, self.detect_num, -1))
         image = (image - self.mean) / self.stddev
+        image = torch.reshape(image, (self.image_size, self.detect_num, -1))
         image = image.permute(2, 1, 0)
-        #image = (image - image.mean()) / image.std()
         label = self.data[((idx + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2), 2:]
         label = torch.from_numpy(label.astype(np.float32))
 
@@ -53,82 +50,20 @@ class STImageDataset(torch.utils.data.Dataset):
 # %% md
 
 ## Creating the CNN Model
-
-# %%
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
-        super(ResidualBlock, self).__init__()
-
-        # Conv Layer 1
-        self.conv1 = nn.Conv2d(
-            in_channels=in_channels, out_channels=out_channels,
-            kernel_size=(3, 3), stride=stride, padding=1, bias=False
-        )
-        self.bn1 = nn.BatchNorm2d(out_channels, momentum=0.6)
-
-        # Conv Layer 2
-        self.conv2 = nn.Conv2d(
-            in_channels=out_channels, out_channels=out_channels,
-            kernel_size=(3, 3), stride=1, padding=1, bias=False
-        )
-        self.bn2 = nn.BatchNorm2d(out_channels, momentum=0.6)
-
-        # Shortcut connection to downsample residual
-        # In case the output dimensions of the residual block is not the same
-        # as it's input, have a convolutional layer downsample the layer
-        # being bought forward by approporate striding and filters
-        self.shortcut = nn.Sequential()
-        if in_channels != out_channels:
-            diff = out_channels - in_channels
-            if diff % 2 == 0:
-                pad = (0, 0, 0, 0, int(diff / 2), int(diff / 2), 0, 0)
-            else:
-                pad = (0, 0, 0, 0, int(diff / 2), int(diff / 2) + 1, 0, 0)
-            self.shortcut = nn.ZeroPad2d(pad)
-        # if stride != 1 or in_channels != out_channels:
-        #     self.shortcut = nn.Sequential(
-        #         nn.Conv2d(
-        #             in_channels=in_channels, out_channels=out_channels,
-        #             kernel_size=(1, 1), stride=stride, bias=False
-        #         ),
-        #         nn.BatchNorm2d(out_channels)
-        #     )
-
-    def forward(self, x):
-        out = nn.ReLU()(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
-        out = nn.ReLU()(out)
-        return out
-
-
-class CNN(nn.Module):
-    def __init__(self, in_channels=3, height=27, width=72):
-        super(CNN, self).__init__()
+class NN(nn.Module):
+    def __init__(self, in_sensors=3, height=27, width=72):
+        super(NN, self).__init__()
 
         # Create blocks
-        self.block1 = self._create_block(in_channels, 32, stride=1)
-        self.block2 = self._create_block(32, 64, stride=1)
-        self.block3 = self._create_block(64, 96, stride=1)
-        self.linear1 = nn.Linear(96 * height * width, 2048)
+        self.linear1 = nn.Linear(in_sensors * height * width, 2048)
         self.drop = nn.Dropout(p=0.6)
         self.linear2 = nn.Linear(2048, 1024)
         self.linear_out = nn.Linear(1024, 1)
 
-    # A block is just two residual blocks for ResNet18
-    def _create_block(self, in_channels, out_channels, stride):
-        return nn.Sequential(
-            ResidualBlock(in_channels, out_channels, stride),
-            ResidualBlock(out_channels, out_channels, 1),
-            ResidualBlock(out_channels, out_channels, 1)
-        )
-
     def forward(self, x):
         # Output of one layer becomes input to the next
-        out = self.block1(x)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = out.view(out.size(0), -1)
+        out = x.view(x.size(0), -1)
+        #print(out.shape)
         out = nn.ReLU()(self.linear1(out))
         out = self.drop(out)
         out = nn.ReLU()(self.linear2(out))
@@ -137,17 +72,11 @@ class CNN(nn.Module):
 
 #%%
 # Running the program
-data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-data = pd.read_csv(data_file_name)
-data = data.to_numpy()
-mean = np.mean(data, axis=0)[2:]
-stddev = np.std(data, axis=0)[2:]
-
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImageDataset(train_data_file_name, mean, stddev)
+train_set = STImageDataset(train_data_file_name)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(5))
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-val_test_set = STImageDataset(val_test_data_file_name, mean, stddev)
+val_test_set = STImageDataset(val_test_data_file_name)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
@@ -161,7 +90,9 @@ print(image[0])
 print(image[0].max())
 print(image[0].mean())
 print(label)
+print(label.shape)
 
+#%%
 for i in range(3):
     image, label = train_set[i]
     img = (image[2] / image[2].max())
@@ -169,11 +100,10 @@ for i in range(3):
     plt.show()
 
 
-model = CNN(3, 27, 72)
-model = model.float()
+nnModel = NN(3, 27, 72)
+nnModel = nnModel.float()
 
-
-# %%
+#%%
 ## Training the CNN
 # Define Dataloader
 batch_size = 50
@@ -183,11 +113,11 @@ test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuff
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 
-model.to(device)  # Put the network on GPU if present
+nnModel.to(device)  # Put the network on GPU if present
 
 criterion = nn.MSELoss()  # L2 Norm
 criterion2 = nn.L1Loss()
-optimizer = optim.Adam(model.parameters(), lr=1e-3)  # ADAM with lr=10^-4
+optimizer = optim.Adam(nnModel.parameters(), lr=1e-3)  # ADAM with lr=10^-4
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.1)  # exponential decay every epoch = 2000iter
 
 # sys.stdout = open("log.txt", "w")
@@ -208,9 +138,8 @@ for epoch in range(10):  # 10 epochs
         inputs, targets = inputs.to(device), targets.to(device)
 
         optimizer.zero_grad()  # Zero the gradients
-        loss = torch.zeros(1, requires_grad=True)
 
-        outputs = model(inputs.float())  # Forward pass
+        outputs = nnModel(inputs.float())  # Forward pass
         loss = criterion(outputs, targets)  # Compute the Loss
         loss.backward()  # Compute the Gradients
 
@@ -227,20 +156,18 @@ for epoch in range(10):  # 10 epochs
     scheduler.step()
 
     # Evaluate
-    for j in random.sample(range(0, 50000), 1000):
-        model(valid_set[j][0].unsqueeze_(0).to(device).float())
-    model.eval()
+    nnModel.eval()
+    total = 0
     losses_test = []
     losses_test2 = []
+
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(valid_loader):
             targets = targets[:, 2]
             targets = torch.unsqueeze(targets, 1)
             inputs, targets = inputs.to(device), targets.to(device)
-            loss = torch.zeros(1, requires_grad=True)
-            loss2 = torch.zeros(1, requires_grad=True)
 
-            outputs = model(inputs.float())  # Forward pass
+            outputs = nnModel(inputs.float())  # Forward pass
             loss = criterion(outputs, targets)  # Compute the Loss
             loss2 = criterion2(outputs, targets)
 
@@ -254,7 +181,7 @@ for epoch in range(10):  # 10 epochs
                 losses_test = []
                 losses_test2 = []
         print('--------------------------------------------------------------')
-    model.train()
+    nnModel.train()
 
 # Plot the training and testing loss
 plt.figure(1)
