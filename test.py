@@ -196,3 +196,11 @@ pad = (0,0,0,0,14,15,0,0)
 m = torch.nn.ZeroPad2d((0,0,0,0,14,15,0,0))
 lacacapad = m(lacaca)
 print(lacacapad.shape)
+
+#%%
+a = [0,1,2,3,4,5,6,7,8,9]
+print(a[-2:])
+
+import torch
+h = torch.rand([64, 30, 5])
+print(h.transpose(0, 1).transpose(0, 2).shape)
