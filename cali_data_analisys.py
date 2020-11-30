@@ -102,11 +102,12 @@ class STImgSeqDataset(torch.utils.data.Dataset):
 
 
 class eRCNN(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size):
+    def __init__(self, input_size, hid_error_size, output_size, n_fc=0, fc_outs=[256]):
         super().__init__()
 
         self.hid_error_size = hid_error_size
-
+        self.n_fc = n_fc
+        last_in = 256+32
         self.conv = nn.Conv2d(
             in_channels=input_size,
             out_channels=32,
@@ -115,7 +116,17 @@ class eRCNN(nn.Module):
         )
         self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
         self.lin_error = nn.Linear(hid_error_size, 32)
-        self.lin_out = nn.Linear(256 + 32, output_size)
+
+        if self.n_fc >= 1:
+            self.lin1 = nn.Linear(last_in, fc_outs[0])
+            last_in = fc_outs[0]
+        if self.n_fc >= 2:
+            self.lin2 = nn.Linear(last_in, fc_outs[1])
+            last_in = fc_outs[1]
+        if self.n_fc >= 3:
+            self.lin3 = nn.Linear(last_in, fc_outs[2])
+            last_in = fc_outs[2]
+        self.lin_out = nn.Linear(last_in, output_size)
 
     def forward(self, input, error):
         out_in = nn.ReLU()(self.conv(input))
@@ -123,8 +134,14 @@ class eRCNN(nn.Module):
         out_in = out_in.view(-1, self.num_flat_features(out_in))
         out_in = nn.ReLU()(self.lin_input(out_in))
         out_err = nn.ReLU()(self.lin_error(error))
-        combined = torch.cat((out_in, out_err), 1)
-        output = self.lin_out(combined)
+        output = torch.cat((out_in, out_err), 1)
+        if self.n_fc >= 1:
+            output = nn.ReLU()(self.lin1(output))
+        if self.n_fc >= 2:
+            output = nn.ReLU()(self.lin2(output))
+        if self.n_fc >= 3:
+            output = nn.ReLU()(self.lin3(output))
+        output = self.lin_out(output)
 
         return output
 
@@ -145,6 +162,10 @@ print(cali_dataset_2015.describe())
 
 label_conf = 'all'
 target = 2  # target: 0-Flow, 1-Occ, 2-Speed, 3-All
+n_fc = 0  # number of extra fully connected layers
+fc_outputs_mult = 1  # multiplier for the number of output of the FC layers
+fc_outputs = [128*fc_outputs_mult, 64*fc_outputs_mult, 32*fc_outputs_mult]  # number of outputs of the FC Layers
+
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 train_set = STImgSeqDataset(train_data_file_name, label_conf=label_conf, target=target)  # target: 0-Flow, 1-Occ, 2-Speed, 3-All
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
@@ -174,9 +195,9 @@ if label_conf == 'all':
     detectors_pred = 27
 else:
     detectors_pred = 1
-n_hidden = 6 * detectors_pred
+hid_error_size = 6 * detectors_pred
 out = 1 * detectors_pred
-e_rcnn = eRCNN(3, n_hidden, out)
+e_rcnn = eRCNN(3, hid_error_size, out, n_fc, fc_outputs)
 
 ## Training eRCNN
 # Define Dataloader

@@ -204,3 +204,47 @@ print(a[-2:])
 import torch
 h = torch.rand([64, 30, 5])
 print(h.transpose(0, 1).transpose(0, 2).shape)
+
+#%% batch norm
+import torch
+from torch import nn
+
+class my_model(nn.Module):
+    def __init__(self, in_channels):
+        super(my_model, self).__init__()
+        self.bn_norm = nn.BatchNorm2d(in_channels)
+    def forward(self, x):
+        out = self.bn_norm(x)
+        return out
+
+
+bn = my_model(3)
+for _ in range(10):
+    x = torch.randn(1, 3, 24, 24)
+    out = bn(x)
+print(bn.bn_norm.running_mean)
+print(bn.bn_norm.running_var)
+
+bn.eval()
+for _ in range(10):
+    x = torch.randn(10, 3, 24, 24)
+    out = bn(x)
+print(bn.bn_norm.running_mean)
+print(bn.bn_norm.running_var)
+
+#%%
+cont = 0
+i = 0
+while i < 5:
+    print(i)
+    # code
+
+    i += 1
+    if i == 4:
+        i = 0
+        cont += 1
+    if cont == 3:
+        print("salimos")
+        break
+
+
