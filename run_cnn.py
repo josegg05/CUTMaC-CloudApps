@@ -40,7 +40,7 @@ class STImageDataset(torch.utils.data.Dataset):
         image = torch.reshape(image, (self.image_size, self.detect_num, -1))
         image = (image - self.mean) / self.stddev
         image = image.permute(2, 1, 0)
-        #image = (image - image.mean()) / image.std()
+        ##image = (image - image.mean()) / image.std()
         label = self.data[((idx + self.image_size + self.pred_window) * self.detect_num) + int(self.detect_num / 2), 2:]
         label = torch.from_numpy(label.astype(np.float32))
 
@@ -48,6 +48,11 @@ class STImageDataset(torch.utils.data.Dataset):
             image = self.transforms(image)
 
         return image, label
+
+    def get_mean(self):
+        m = np.mean(self.data, axis=0)[2:]
+        s = np.std(self.data, axis=0)[2:]
+        return m, s
 
 
 # %% md
@@ -64,14 +69,14 @@ class ResidualBlock(nn.Module):
             in_channels=in_channels, out_channels=out_channels,
             kernel_size=(3, 3), stride=stride, padding=1, bias=False
         )
-        self.bn1 = nn.BatchNorm2d(out_channels, momentum=0.6)
+        self.bn1 = nn.BatchNorm2d(out_channels, momentum=0.001, eps=0.001)
 
         # Conv Layer 2
         self.conv2 = nn.Conv2d(
             in_channels=out_channels, out_channels=out_channels,
             kernel_size=(3, 3), stride=1, padding=1, bias=False
         )
-        self.bn2 = nn.BatchNorm2d(out_channels, momentum=0.6)
+        self.bn2 = nn.BatchNorm2d(out_channels, momentum=0.001, eps=0.001)
 
         # Shortcut connection to downsample residual
         # In case the output dimensions of the residual block is not the same
@@ -145,14 +150,23 @@ stddev = np.std(data, axis=0)[2:]
 
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 train_set = STImageDataset(train_data_file_name, mean, stddev)
-train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(5))
+print(f"Mean train = {train_set.get_mean()}")
+train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(50))
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
 val_test_set = STImageDataset(val_test_data_file_name, mean, stddev)
-valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(5))
+print(f"Mean test = {val_test_set.get_mean()}")
+valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(50))
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
 print(f"Size of test_set = {len(test_set)}")
 
+#%%
+# lolo = np.array([0,0,60])
+# lala = np.array([1,1,10])
+# image, label = train_set[0]
+# print(image.shape)
+# print(image[2])
+# #print(((image - mean)/stddev)[2])
 # %%
 
 image, label = train_set[0]
@@ -177,6 +191,7 @@ model = model.float()
 ## Training the CNN
 # Define Dataloader
 batch_size = 50
+torch.manual_seed(50)
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
