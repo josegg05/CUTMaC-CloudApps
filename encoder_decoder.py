@@ -5,13 +5,13 @@ import torch.optim as optim
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from observer import EncoderDecoder2
+from observer import EncoderDecoder2, count_parameters
 import os
 from pylab import rcParams
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-folder = 'EncoderDecoder/'
+folder = 'resultados/EncoderDecoder/'
 folder_results = folder + 'Results/'
 
 
@@ -92,14 +92,15 @@ print(label.shape)
 n_inputs = 27*3
 n_outputs = 27
 seqlen_conv = 72
-seqlen_rec = 10
-hidden_size_rec = 7
+seqlen_rec = 12
+hidden_size_rec = 50
 num_layers_rec = 2
 
 encod_decod = EncoderDecoder2(n_inputs=n_inputs, n_outputs=n_outputs, seqlen_conv=seqlen_conv, hidden_size=hidden_size_rec,
                             num_layers=num_layers_rec).to(device)
 
 encod_decod = encod_decod.float()
+count_parameters(encod_decod)
 #%% Training
 batch_size = 50
 patience = 50
@@ -110,9 +111,11 @@ test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuff
 criterion = nn.MSELoss()  # L2 Norm
 criterion2 = nn.L1Loss()
 optimizer = optim.Adam(encod_decod.parameters(), lr=1e-4)  # ADAM with lr=10^-4
+min_loss = 100000
 
 loss_list_train = []
 loss_list_test = []
+loss_list_test2 = []
 epochs = 10
 for epoch in range(epochs):
     last_epoch = epoch
@@ -150,6 +153,7 @@ for epoch in range(epochs):
 
     with torch.no_grad():
         loss_acc = 0
+        loss_acc2 = 0
         its = 0
         for batch_idx, (input, targets) in enumerate(valid_loader):
             #targets = targets[:, 2]
@@ -165,15 +169,19 @@ for epoch in range(epochs):
             Y_pred = encod_decod(X_c.float(), X_r.float())
 
             loss = criterion(Y_pred, Y)
+            loss2 = criterion2(Y_pred, Y)
             its += 1
             loss_acc += loss.item()
+            loss_acc2 += loss2.item()
 
     loss_list_test.append(loss_acc / its)
+    loss_list_test2.append(loss_acc2 / its)
 
-    print('\nEpoch: {} | Eval loss: {}\n'.format(epoch, loss_acc / its))
+    print('\nEpoch: {} | Eval MSE: {}\n'.format(epoch, loss_acc / its))
+    print('\nEpoch: {} | Eval MAE: {}\n'.format(epoch, loss_acc2 / its))
 
     # saving loss
-    torch.save([loss_list_train, loss_list_test], folder_results + 'loss.pt')
+    torch.save([loss_list_train, loss_list_test, loss_list_test2], folder_results + 'loss.pt')
     torch.save(encod_decod.state_dict(), folder_results + 'model_observer_{}.pt'.format(epoch))
 
     if loss_acc / its < min_loss:

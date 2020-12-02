@@ -6,6 +6,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import matplotlib.pyplot as plt
+from prettytable import PrettyTable
+
+
+def count_parameters(model):
+    table = PrettyTable(["Modules", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad: continue
+        param = parameter.numel()
+        table.add_row([name, param])
+        total_params += param
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
+    return total_params
 
 
 class Observer(nn.Module):
@@ -152,17 +166,18 @@ class BranchWrapperRecurrent(nn.Module):
 
 
 class EncoderConv(nn.Module):
-    def __init__(self, n_inputs, seqlen, kernel_sizes = [9, 7, 5], multiplier=2, n_output_hs=30, n_output_nl=1):
+    def __init__(self, n_inputs, seqlen, kernel_sizes=[9, 7, 5], multiplier=2, n_output_hs=30,
+                 n_output_nl=1):  # kernel_sizes=[9, 7, 5]
         super(EncoderConv, self).__init__()
 
         '''
         Conv1d : input (N, C_in, L_in) -> (N, C_out, L_out)
             N is batch size, C is channels and L is length of signal sequence
-            
+
         n_output lo utilizamos para transformarlo en el espacio latente
         n_output_hs es el espacio latente del hidden size de encoder recurrent
         n_output_nl es la cantidad de layers que tiene un encoder recurrente
-    
+
         '''
 
         padding1 = int((kernel_sizes[0] - 1) / 2)
@@ -173,26 +188,26 @@ class EncoderConv(nn.Module):
 
         self.depthwise_conv2 = nn.Conv1d(in_channels=n_inputs, out_channels=n_inputs * multiplier,
                                          kernel_size=kernel_sizes[1], stride=1, groups=n_inputs, padding=1)
-        self.pointwise_conv2 = nn.Conv1d(in_channels=n_inputs * multiplier, out_channels= n_inputs * multiplier,
+        self.pointwise_conv2 = nn.Conv1d(in_channels=n_inputs * multiplier, out_channels=n_inputs * multiplier,
                                          kernel_size=1, stride=1, groups=1)
 
-        self.depthwise_conv3 = nn.Conv1d(in_channels=n_inputs * multiplier, out_channels=n_inputs * multiplier * 2,
-                                         kernel_size=kernel_sizes[2], stride=1, groups=n_inputs)
-        self.pointwise_conv3 = nn.Conv1d(in_channels=n_inputs * multiplier * 2, out_channels=n_inputs * multiplier * 2,
-                                         kernel_size=1, stride=1, groups=1)
+        # self.depthwise_conv3 = nn.Conv1d(in_channels=n_inputs * multiplier, out_channels=n_inputs * multiplier * 2,
+        #                                  kernel_size=kernel_sizes[2], stride=1, groups=n_inputs)
+        # self.pointwise_conv3 = nn.Conv1d(in_channels=n_inputs * multiplier * 2, out_channels=n_inputs * multiplier * 2,
+        #                                  kernel_size=1, stride=1, groups=1)
 
         channels = [n_inputs, n_inputs * multiplier, n_inputs * multiplier * 2]
         self.layerNorm1 = nn.LayerNorm(channels[0])
         self.layerNorm2 = nn.LayerNorm(channels[1])
-        self.layerNorm3 = nn.LayerNorm(channels[2])
+        # self.layerNorm3 = nn.LayerNorm(channels[2])
 
         Lout1 = seqlen
         Lout2 = Lout1 - (kernel_sizes[1] - 1) + 2 * 1  # el 2 * 1 es porque es padding de 1 a cada lado
         Lout3 = Lout2 - (kernel_sizes[2] - 1)
 
         # Salida para retransformar el espacio en un estado latene.
-        self.linear1 = nn.Linear(in_features=Lout3, out_features=n_output_hs)
-        self.linear2 = nn.Linear(in_features=channels[2], out_features=n_output_nl)
+        self.linear1 = nn.Linear(in_features=Lout2, out_features=n_output_hs)  # in_features=Lout3
+        self.linear2 = nn.Linear(in_features=channels[1], out_features=n_output_nl)  # in_features=channels[2]
 
     def forward(self, input):
         x = input
@@ -211,14 +226,14 @@ class EncoderConv(nn.Module):
         h = F.dropout(F.leaky_relu(self.pointwise_conv2(h)), p=0.2, training=self.training)
         # print(h.shape) # torch.Size([64, 66, 196])
         h = self.layerNorm2(h.transpose(1, 2)).transpose(1, 2)
-        # Nuevamente se normaliza en cada canal y vuelve al original
+        #  Nuevamente se normaliza en cada canal y vuelve al original
         # print(h.shape) # torch.Size([64, 66, 196])
 
-        h = self.depthwise_conv3(h)
-        # print(h.shape) # torch.Size([64, 132, 192])
-        h = F.dropout(F.leaky_relu(self.pointwise_conv3(h)), p=0.2, training=self.training)
-        # print(h.shape) # torch.Size([64, 132, 192])
-        h = self.layerNorm3(h.transpose(1, 2)).transpose(1, 2) # torch.Size([64, 132, 192])
+        # h = self.depthwise_conv3(h)
+        # # print(h.shape) # torch.Size([64, 132, 192])
+        # h = F.dropout(F.leaky_relu(self.pointwise_conv3(h)), p=0.2, training=self.training)
+        # # print(h.shape) # torch.Size([64, 132, 192])
+        # h = self.layerNorm3(h.transpose(1, 2)).transpose(1, 2) # torch.Size([64, 132, 192])
 
         # h_out_pred.shape = (batch size, n_inputs * multiplier * 2, Lout3)
 
@@ -226,10 +241,12 @@ class EncoderConv(nn.Module):
 
         # print(h.shape) # torch.Size([64, 132, 192])
         h = self.linear1(h)
-        # print(h.shape) # torch.Size([64, 132, 30])
+        # print(h.shape) # torch.Size([64, 132, 20])
         h = self.linear2(h.transpose(1, 2))
-        # print(h.shape) # torch.Size([64, 30, 5])
+        # print(h.shape) # torch.Size([64, 20, 2])
         h = h.transpose(0, 1).transpose(0, 2)
+        # print(h.shape) # torch.Size([2, 64, 20]) = [num_layers_rec_dec, batch_size, hidden_size_rec]
+        # in my case = torch.Size([2, 50, 7])
 
         # print(h.shape)
         return h
@@ -245,7 +262,7 @@ class EncoderRec(nn.Module):
         self.n_directions = 1 if not self.bidirectional else 2
 
         self.gru = nn.GRU(input_size=self.n_inputs, hidden_size=self.hidden_size, num_layers=self.num_layers,
-                          bidirectional= self.bidirectional, batch_first=True, dropout=0.2)
+                          bidirectional=self.bidirectional, batch_first=True, dropout=0.2)
 
     def init_hidden(self, batch_size, hidden_size, gru):
         return torch.randn(self.num_layers * self.n_directions, batch_size, hidden_size).float().to(
@@ -294,7 +311,6 @@ class DecoderRec(nn.Module):
         self.linear1 = nn.Linear(in_features=num_layers, out_features=1)
         self.linear2 = nn.Linear(in_features=hidden_size_in, out_features=n_outputs)
 
-
     def forward(self, x, h):
         '''
 
@@ -319,6 +335,7 @@ class EncoderDecoder1(nn.Module):
     Encoder conv
     Decoder non Lin
     '''
+
     def __init__(self, n_inputs, n_outputs, seqlen_conv, hidden_size=30, num_layers=1):
         super(EncoderDecoder1, self).__init__()
 
@@ -337,6 +354,7 @@ class EncoderDecoder2(nn.Module):
     Encoder conv
     Decoder rec
     '''
+
     def __init__(self, n_inputs, n_outputs, seqlen_conv, hidden_size, num_layers):
         super(EncoderDecoder2, self).__init__()
 
@@ -357,6 +375,7 @@ class EncoderDecoder3(nn.Module):
     Encoder sum( encoder conv, encoder rec)
     Decoder non Lin
     '''
+
     def __init__(self, n_inputs, n_outputs, seqlen_conv, hidden_size, num_layers):
         super(EncoderDecoder3, self).__init__()
 
@@ -377,6 +396,7 @@ class EncoderDecoder4(nn.Module):
     Encoder sum( encoder conv, encoder rec)
     Decoder rec
     '''
+
     def __init__(self, n_inputs, n_outputs, seqlen_conv, hidden_size, num_layers):
         super(EncoderDecoder4, self).__init__()
 
@@ -385,7 +405,6 @@ class EncoderDecoder4(nn.Module):
         self.encoder_r = EncoderRec(n_inputs=n_inputs, hidden_size=hidden_size, num_layers=num_layers)
         self.decoder_r = DecoderRec(n_inputs=n_inputs, n_outputs=n_outputs, hidden_size_in=hidden_size,
                                     num_layers=num_layers)
-
 
     def forward(self, x_c, x_r):
         h_c = self.encoder_c(x_c)
@@ -399,6 +418,7 @@ class EncoderDecoder5(nn.Module):
     Encoder concatenate( encoder conv, encoder rec)
     Decoder non Lin
     '''
+
     def __init__(self, n_inputs, n_outputs, seqlen_conv, hidden_size, num_layers):
         super(EncoderDecoder5, self).__init__()
 
@@ -474,7 +494,6 @@ class EncoderDecoder7(nn.Module):
 
 
 if __name__ == "__main__":
-
     ##### Encoders testing
 
     n_inputs = 33
@@ -513,7 +532,6 @@ if __name__ == "__main__":
     y = dec_r(X_r, h_r)
     print(y.shape)
 
-
     ### Encoder Decoder RNN1
     # edRNN1 = ObserverRNN1(n_inputs=n_inputs, n_outputs=4, hidden_size=hidden_size_rec, n_layers=num_layers_rec)
     # y = edRNN1(X_r)
@@ -527,7 +545,6 @@ if __name__ == "__main__":
     '''
     ed2 = EncoderDecoder2(n_inputs=n_inputs, n_outputs=4, seqlen_conv=seqlen_conv, hidden_size=hidden_size_rec,
                           num_layers=num_layers_rec)
-
 
     y = ed2(X_c, X_r)
     print(y.shape)

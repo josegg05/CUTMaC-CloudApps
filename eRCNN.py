@@ -156,6 +156,56 @@ class eRCNN(nn.Module):
         return num_features
 
 
+class eRCNNSeq(nn.Module):
+    def __init__(self, input_size, hid_error_size, output_size, out_seq=1):
+        super().__init__()
+
+        self.hid_error_size = hid_error_size
+        self.out_seq = out_seq
+        last_in = 256+32
+        self.conv = nn.Conv2d(
+            in_channels=input_size,
+            out_channels=32,
+            kernel_size=(3, 3),
+            stride=1
+        )
+        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(hid_error_size, 32)
+        self.lin_out = nn.Linear(last_in, output_size)
+
+    def forward(self, input, target):
+        error = self.initError(input.shape[1])
+        out_list = []
+        for seq in range(input.shape[0]):
+            out_in = nn.ReLU()(self.conv(input[seq]))
+            out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
+            out_in = out_in.view(-1, self.num_flat_features(out_in))
+            out_in = nn.ReLU()(self.lin_input(out_in))
+            out_err = nn.ReLU()(self.lin_error(error))
+            output = torch.cat((out_in, out_err), 1)
+            output = self.lin_out(output)
+
+            err_seq = output - target[seq]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            if seq >= input.shape[0] - self.out_seq:
+                out_list.append(output)
+
+        output = torch.cat(out_list, 1)
+        output = output.view(output.shape[0], -1, self.out_seq)
+        return output
+
+    def initError(self, batch_size):
+        return torch.zeros(batch_size, self.hid_error_size)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
+
 cali_dataset_2015 = pd.read_csv("datasets/california_paper_eRCNN/I5-N-3/2015.csv")
 print(cali_dataset_2015.head())
 print(cali_dataset_2015.describe())
@@ -197,7 +247,9 @@ else:
     detectors_pred = 1
 hid_error_size = 6 * detectors_pred
 out = 1 * detectors_pred
-e_rcnn = eRCNN(3, hid_error_size, out, n_fc, fc_outputs)
+out_seq = 1
+#e_rcnn = eRCNN(3, hid_error_size, out, n_fc, fc_outputs)
+e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq)
 
 ## Training eRCNN
 # Define Dataloader
@@ -230,35 +282,31 @@ for epoch in range(10):  # 10 epochs
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         inputs = inputs.permute(1, 0, 2, 3, 4)
         targets = targets.permute(1, 0, 2)
-        # print(targets.shape)
-        # targets = targets[:, :, 2]  # no va ahora
-        # targets = torch.unsqueeze(targets, 2) # no va ahora
-        # print(targets.shape)
+
         inputs, targets = inputs.to(device), targets.to(device)
 
         optimizer.zero_grad()  # Zero the gradients
+        # e_rcnn.zero_grad()
 
         error = e_rcnn.initError(batch_size)
         error = error.to(device)
-        # print(inputs.shape)
-        # print(inputs[i].shape)
-        # print(targets.shape)
-        # print(error.shape)
-        # e_rcnn.zero_grad()
         loss = torch.zeros(1, requires_grad=True)
-        for i in range(inputs.shape[0]):
-            outputs = e_rcnn(inputs[i], error.detach())
-            err_i = outputs - targets[i]
-            error = torch.cat((error[:, detectors_pred:], err_i), 1)
-            # loss = loss + criterion(outputs, targets[i])  # Loss function Option 2
+        outputs = e_rcnn(inputs, targets)
+        print(outputs.shape)
+        # for i in range(inputs.shape[0]):  # Uncomment for previous version
+        #     outputs = e_rcnn(inputs[i], error.detach())
+        #     err_i = outputs - targets[i]
+        #     error = torch.cat((error[:, detectors_pred:], err_i), 1)
+        #     # loss = loss + criterion(outputs, targets[i])  # Loss function Option 2
 
         # loss = criterion(outputs, targets[-1])    # Compute the Loss
         # loss /= inputs.shape[0]
-        loss = criterion(outputs, targets[i])
+        # loss = criterion(outputs, targets[-1])  # Uncomment for previous version
+        loss = criterion(outputs, targets[-out_seq:].permute(1, 2, 0))
         loss.backward()
         # print(f"BTT of Batch: {batch_idx}")# Compute the Gradients
 
-        nn.utils.clip_grad_norm_(e_rcnn.parameters(), 40)  # gradient cliping norm for ercnn
+        nn.utils.clip_grad_norm_(e_rcnn.parameters(), 40)  # gradient clipping norm for eRCNN
         optimizer.step()  # Updated the weights
         losses.append(loss.item())
         end = time.time()
@@ -281,20 +329,21 @@ for epoch in range(10):  # 10 epochs
         for batch_idx, (inputs_test, targets_test) in enumerate(valid_loader):
             inputs_test = inputs_test.permute(1, 0, 2, 3, 4)
             targets_test = targets_test.permute(1, 0, 2)
-            #targets_test = targets_test[:, :, 2]
-            #targets_test = torch.unsqueeze(targets_test, 2)
             inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
             error_test = e_rcnn.initError(batch_size)
             error_test = error_test.to(device)
             loss = torch.zeros(1, requires_grad=True)
-            for i in range(inputs_test.shape[0]):
-                outputs_test = e_rcnn(inputs_test[i], error_test.detach())
-                err_i = outputs_test - targets_test[i]
-                error_test = torch.cat((error_test[:, detectors_pred:], err_i), 1)
+            outputs_test = e_rcnn(inputs_test, targets)
+            # for i in range(inputs_test.shape[0]):
+            #     outputs_test = e_rcnn(inputs_test[i], error_test.detach())
+            #     err_i = outputs_test - targets_test[i]
+            #     error_test = torch.cat((error_test[:, detectors_pred:], err_i), 1)
 
-            loss = criterion(outputs_test, targets_test[i])
-            loss2 = criterion2(outputs_test, targets_test[i])
+            # loss = criterion(outputs_test, targets_test[i])
+            # loss2 = criterion2(outputs_test, targets_test[i])
+            loss = criterion(outputs_test, targets_test[-out_seq:].permute(1, 2, 0))
+            loss2 = criterion2(outputs_test, targets_test[-out_seq:].permute(1, 2, 0))
             losses_test.append(loss.item())
             losses_test2.append(loss2.item())
             if batch_idx % 100 == 0:

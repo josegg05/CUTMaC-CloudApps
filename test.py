@@ -247,4 +247,92 @@ while i < 5:
         print("salimos")
         break
 
+#%% Test de FC layers
+import json
+import numpy as np
+loss = []
+loss2 = []
+# open output file for reading
+for i in range(3):
+    filename = f"resultados/fc_layers_test/loss_plot_test_{i+1}_1_2.txt"
+    with open(filename, 'r') as filehandle:
+        loss.append(json.load(filehandle))
 
+    print(f"MSE of {i+1} FC layer with multiplier 1 = {np.mean(loss[i][-10:])}")
+
+for i in range(3):
+    filename = f"resultados/fc_layers_test/loss_plot_test2_{i+1}_1_2.txt"
+    with open(filename, 'r') as filehandle:
+        loss2.append(json.load(filehandle))
+
+    print(f"MAE of {i+1} FC layer with multiplier 1 = {np.mean(loss2[i][-10:])}")
+
+loss = []
+loss2 = []
+for i in range(3):
+    filename = f"resultados/fc_layers_test/loss_plot_test_{i+1}_2_2.txt"
+    with open(filename, 'r') as filehandle:
+        loss.append(json.load(filehandle))
+
+    print(f"MSE of {i+1} FC layer with multiplier 2 = {np.mean(loss[i][-10:])}")
+
+for i in range(3):
+    filename = f"resultados/fc_layers_test/loss_plot_test2_{i+1}_2_2.txt"
+    with open(filename, 'r') as filehandle:
+        loss2.append(json.load(filehandle))
+
+    print(f"MAE of {i+1} FC layer with multiplier 2 = {np.mean(loss2[i][-10:])}")
+
+
+#%%
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import matplotlib.pyplot as plt
+
+class log_regression(nn.Module):
+    def __init__(self, input, lin=False, t = 0):
+        super(log_regression, self).__init__()
+        self.lin=lin
+        self.linear = nn.Linear(input, 1)
+        self.treshold = nn.Threshold(t, 1)
+
+    def forward(self, x):
+        if self.lin:
+            out = (self.linear(x) > 0.5).float()
+            print(out)
+        else:
+            out = torch.sigmoid(self.linear(x))
+        return out
+
+log_model = log_regression(1, True)
+x = torch.Tensor([i for i in range(-100, 101) if i != 0])
+#x = torch.Tensor([6,8,10,12, 15,17,19,21])
+y = torch.Tensor([0 if i < 0 else 1 for i in range(-100, 100)])
+#y = torch.Tensor([0,0,0,0,1,1,1,1])
+X = x.view(200, -1)   # (200, -1)
+criterion = nn.L1Loss()
+optimizer = optim.SGD(log_model.parameters(), lr=0.01)
+for epoch in range(100):
+    for sample in range(x.shape[0]):
+        y_hat = log_model(x[sample].view(1, -1))
+        loss = criterion(y_hat, y[sample].view(1, -1))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+
+with torch.no_grad():
+    plt.plot(x.numpy(), log_model(X).numpy())
+    plt.plot(x.numpy(), y.numpy(), 'bo')
+    plt.show()
+
+#%% Test Resultados Ecod Decod
+import torch
+folder = 'resultados/EncoderDecoder/'
+folder_results = folder + 'hidSize_40/'
+loss = torch.load(folder_results + 'loss.pt')
+
+for i in range(len(loss[0])):
+    print(loss[1][i])
