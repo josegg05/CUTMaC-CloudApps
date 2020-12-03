@@ -202,9 +202,10 @@ out = 1 * detectors_pred
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
 
+best_loss = 1000000
 cont = 2
 r = 0
-while r < 3:
+while r < 4:
     r += 1
     if r == 4:
         r = 1
@@ -335,3 +336,10 @@ while r < 3:
 
     with open(f'resultados/fc_layers_test/loss_plot_test2_{n_fc}_{fc_outputs_mult}_{target}.txt', 'w') as filehandle:
         json.dump(loss_plot_test2, filehandle)
+
+    if np.mean(loss_plot_test2) < best_loss:
+        best_loss = np.mean(loss_plot_test2)
+        best_nfc = n_fc
+        best_mult = fc_outputs_mult
+        best_model = f"ercnn_{best_nfc}_{best_mult}"
+    print(f"best model is n_fc {best_nfc} and multiplier {best_mult}")

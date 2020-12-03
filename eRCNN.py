@@ -157,11 +157,12 @@ class eRCNN(nn.Module):
 
 
 class eRCNNSeq(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, out_seq=1):
+    def __init__(self, input_size, hid_error_size, output_size, out_seq=1, dev="cpu"):
         super().__init__()
 
         self.hid_error_size = hid_error_size
         self.out_seq = out_seq
+        self.dev = dev
         last_in = 256+32
         self.conv = nn.Conv2d(
             in_channels=input_size,
@@ -175,6 +176,7 @@ class eRCNNSeq(nn.Module):
 
     def forward(self, input, target):
         error = self.initError(input.shape[1])
+        error = error.to(self.dev)
         out_list = []
         for seq in range(input.shape[0]):
             out_in = nn.ReLU()(self.conv(input[seq]))
@@ -248,18 +250,19 @@ else:
 hid_error_size = 6 * detectors_pred
 out = 1 * detectors_pred
 out_seq = 1
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
+# device = "cpu"
 #e_rcnn = eRCNN(3, hid_error_size, out, n_fc, fc_outputs)
-e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq)
+e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq, dev=device)
 
 ## Training eRCNN
 # Define Dataloader
 batch_size = 50
+torch.manual_seed(50)
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
-# device = "cpu"
 e_rcnn.to(device)  # Put the network on GPU if present
 
 criterion = nn.MSELoss()  # L2 Norm
@@ -288,11 +291,11 @@ for epoch in range(10):  # 10 epochs
         optimizer.zero_grad()  # Zero the gradients
         # e_rcnn.zero_grad()
 
-        error = e_rcnn.initError(batch_size)
-        error = error.to(device)
+        # error = e_rcnn.initError(batch_size)
+        # error = error.to(device)
         loss = torch.zeros(1, requires_grad=True)
         outputs = e_rcnn(inputs, targets)
-        print(outputs.shape)
+        #print(outputs.shape)
         # for i in range(inputs.shape[0]):  # Uncomment for previous version
         #     outputs = e_rcnn(inputs[i], error.detach())
         #     err_i = outputs - targets[i]
@@ -311,7 +314,7 @@ for epoch in range(10):  # 10 epochs
         losses.append(loss.item())
         end = time.time()
 
-        if batch_idx % 100 == 0:
+        if (batch_idx + 1) % 100 == 0:
             print(losses)
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses), end - start))
             loss_plot_train.append(np.mean(losses))
@@ -331,8 +334,8 @@ for epoch in range(10):  # 10 epochs
             targets_test = targets_test.permute(1, 0, 2)
             inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
-            error_test = e_rcnn.initError(batch_size)
-            error_test = error_test.to(device)
+            # error_test = e_rcnn.initError(batch_size)
+            # error_test = error_test.to(device)
             loss = torch.zeros(1, requires_grad=True)
             outputs_test = e_rcnn(inputs_test, targets)
             # for i in range(inputs_test.shape[0]):
@@ -346,7 +349,7 @@ for epoch in range(10):  # 10 epochs
             loss2 = criterion2(outputs_test, targets_test[-out_seq:].permute(1, 2, 0))
             losses_test.append(loss.item())
             losses_test2.append(loss2.item())
-            if batch_idx % 100 == 0:
+            if (batch_idx + 1) % 100 == 0:
                 print('Batch Index : %d MSE : %.3f' % (batch_idx, np.mean(losses_test)))
                 print('Batch Index : %d MAE : %.3f' % (batch_idx, np.mean(losses_test2)))
                 # loss_plot_test.append(np.mean(losses_test))
@@ -364,6 +367,9 @@ with open(f'loss_plot_test_{target}.txt', 'w') as filehandle:
 
 with open(f'loss_plot_test2_{target}.txt', 'w') as filehandle:
     json.dump(loss_plot_test2, filehandle)
+
+print(f"Final Validation MSE = {np.mean(loss_plot_test[-10:])}")
+print(f"Final Validation MAE = {np.mean(loss_plot_test2[-10:])}")
 
 # Plot the training and testing loss
 plt.figure(1)
@@ -419,69 +425,69 @@ plt.show()
 
 
 #%%
-# Image Testing
-img_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, target=target, seq_size=72*3)
-img_test_set, extra = torch.utils.data.random_split(img_test_set, [100000, len(img_test_set) - 100000],
-                                                 generator=torch.Generator().manual_seed(5))
-e_rcnn.eval()
-total = 0
-losses_test_oneshot = []
-losses_test_oneshot2 = []
-outputs_test_oneshot = []
-targets_test_oneshot = []
-with torch.no_grad():
-    np.random.seed(seed=25)
-    inputs_test, targets_test = img_test_set[np.random.randint(100000)]
-    inputs_test = inputs_test.unsqueeze_(1)
-    targets_test = targets_test.unsqueeze_(1)
-    inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
-
-    error_test = e_rcnn.initError(1)
-    error_test = error_test.to(device)
-    loss = torch.zeros(1, requires_grad=True)
-    for i in range(inputs_test.shape[0]):
-        outputs_test = e_rcnn(inputs_test[i], error_test.detach())
-        loss = criterion(outputs_test, targets_test[i])
-        loss2 = criterion2(outputs_test, targets_test[i])
-        losses_test_oneshot.append(loss.item())
-        losses_test_oneshot2.append(loss2.item())
-        err_i = outputs_test - targets_test[i]
-        error_test = torch.cat((error_test[:, detectors_pred:], err_i), 1)
-        if i > 40:
-            outputs_test_oneshot.append(outputs_test)
-            targets_test_oneshot.append(targets_test[i])
-outputs_test_oneshot = torch.cat(outputs_test_oneshot)
-targets_test_oneshot = torch.cat(targets_test_oneshot)
-outputs_test_oneshot = outputs_test_oneshot.permute(1, 0)
-targets_test_oneshot = targets_test_oneshot.permute(1, 0)
-#print(outputs_test_oneshot)
-#print(targets_test_oneshot)
-#img_out = (outputs_test_oneshot/ outputs_test_oneshot.max())
-#img_target = (targets_test_oneshot/ outputs_test_oneshot.max())
-plt.figure()
-plt.imshow(outputs_test_oneshot.cpu())
-plt.savefig(f"img_out_{target}.png")
-plt.show()
-plt.figure()
-plt.imshow(targets_test_oneshot.cpu())
-plt.savefig(f"img_target_{target}.png")
-plt.show()
-
-plt.figure()
-plt.plot(losses_test_oneshot)
-plt.title("Training MSE")
-plt.ylabel("MSE")
-plt.xlabel("Bacthx100")
-plt.grid()
-plt.savefig(f"train_mse_oneshot_{target}.png")
-
-plt.figure()
-plt.plot(losses_test_oneshot2)
-#plt.ylim(0, 3)
-plt.title("Testing MAE")
-plt.ylabel("MAE")
-plt.xlabel("Bacth")
-plt.grid()
-plt.savefig(f"test_mae_oneshot_{target}.png")
-
-#sys.stdout.close()
+# # Image Testing
+# img_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, target=target, seq_size=72*3)
+# img_test_set, extra = torch.utils.data.random_split(img_test_set, [100000, len(img_test_set) - 100000],
+#                                                  generator=torch.Generator().manual_seed(5))
+# e_rcnn.eval()
+# total = 0
+# losses_test_oneshot = []
+# losses_test_oneshot2 = []
+# outputs_test_oneshot = []
+# targets_test_oneshot = []
+# with torch.no_grad():
+#     np.random.seed(seed=25)
+#     inputs_test, targets_test = img_test_set[np.random.randint(100000)]
+#     inputs_test = inputs_test.unsqueeze_(1)
+#     targets_test = targets_test.unsqueeze_(1)
+#     inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
+#
+#     error_test = e_rcnn.initError(1)
+#     error_test = error_test.to(device)
+#     loss = torch.zeros(1, requires_grad=True)
+#     for i in range(inputs_test.shape[0]):
+#         outputs_test = e_rcnn(inputs_test[i], error_test.detach())
+#         loss = criterion(outputs_test, targets_test[i])
+#         loss2 = criterion2(outputs_test, targets_test[i])
+#         losses_test_oneshot.append(loss.item())
+#         losses_test_oneshot2.append(loss2.item())
+#         err_i = outputs_test - targets_test[i]
+#         error_test = torch.cat((error_test[:, detectors_pred:], err_i), 1)
+#         if i > 40:
+#             outputs_test_oneshot.append(outputs_test)
+#             targets_test_oneshot.append(targets_test[i])
+# outputs_test_oneshot = torch.cat(outputs_test_oneshot)
+# targets_test_oneshot = torch.cat(targets_test_oneshot)
+# outputs_test_oneshot = outputs_test_oneshot.permute(1, 0)
+# targets_test_oneshot = targets_test_oneshot.permute(1, 0)
+# #print(outputs_test_oneshot)
+# #print(targets_test_oneshot)
+# #img_out = (outputs_test_oneshot/ outputs_test_oneshot.max())
+# #img_target = (targets_test_oneshot/ outputs_test_oneshot.max())
+# plt.figure()
+# plt.imshow(outputs_test_oneshot.cpu())
+# plt.savefig(f"img_out_{target}.png")
+# plt.show()
+# plt.figure()
+# plt.imshow(targets_test_oneshot.cpu())
+# plt.savefig(f"img_target_{target}.png")
+# plt.show()
+#
+# plt.figure()
+# plt.plot(losses_test_oneshot)
+# plt.title("Training MSE")
+# plt.ylabel("MSE")
+# plt.xlabel("Bacthx100")
+# plt.grid()
+# plt.savefig(f"train_mse_oneshot_{target}.png")
+#
+# plt.figure()
+# plt.plot(losses_test_oneshot2)
+# #plt.ylim(0, 3)
+# plt.title("Testing MAE")
+# plt.ylabel("MAE")
+# plt.xlabel("Bacth")
+# plt.grid()
+# plt.savefig(f"test_mae_oneshot_{target}.png")
+#
+# #sys.stdout.close()
