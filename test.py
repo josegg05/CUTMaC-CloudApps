@@ -330,9 +330,67 @@ with torch.no_grad():
 
 #%% Test Resultados Ecod Decod
 import torch
-folder = 'resultados/EncoderDecoder/'
-folder_results = folder + 'hidSize_40/'
-loss = torch.load(folder_results + 'loss.pt')
+folder_list = ['hidSize_7/kernel_9-7-5/', 'hidSize_7/kernel_7-5-3/', 'hidSize_7/conv_3_desactivada/',
+               'hidSize_20/kernel_9-7-5/', 'hidSize_20/conv_3_desactivada/',
+               'hidSize_40/kernel_9-7-5/', 'hidSize_40/conv_3_desactivada/',
+               'hidSize_50/conv_3_desactivada/']
 
-for i in range(len(loss[0])):
-    print(loss[1][i])
+folder = 'resultados/EncoderDecoder/'
+for i in range(len(folder_list)):
+    folder_results = folder + folder_list[i]
+    loss = torch.load(folder_results + 'loss.pt')
+
+    print(folder_list[i])
+    print(f"MSE = {loss[1][-1]}")
+    try:
+        print(f"MAE = {loss[2][-1]}")
+    except:
+        print("no MAE")
+
+#%%
+import torch
+import torch.nn as nn
+list = [torch.Tensor([[1,1,1,1,1,1,1], [4,4,4,4,4,4,4]]), torch.Tensor([[2,2,2,2,2,2,2], [5,5,5,5,5,5,5]]), torch.Tensor([[3,3,3,3,3,3,3], [6,6,6,6,6,6,6]])]
+list = [torch.Tensor([[3,3,3,3,3,3,3], [6,6,6,6,6,6,6]])]
+a = torch.cat(list, 1)
+b = a.view(a.shape[0], -1, 1)
+c = a.view(a.shape[0], 1, -1)
+
+c = c.transpose(1,2)
+
+print(b)
+print(c)
+
+target1 = torch.Tensor([[[2], [2], [2], [2], [2], [2], [2]], [[2], [2], [2], [2], [2], [2], [2]]])
+target2 = torch.Tensor([[2,2,2,2,2,2,2],[2,2,2,2,2,2,2]])
+criterion = nn.MSELoss()
+
+loss1 = criterion(c, target1)
+loss2 = criterion(c.squeeze(), target2)
+print(loss1)
+print(loss2)
+
+#%%
+import numpy as np
+import torch.nn as nn
+import matplotlib.pyplot as plt
+test_predictions = torch.Tensor(np.load('resultados/CNN/Tensorflow/70_30/test_prediction_1.npy'))
+test_target = torch.Tensor(np.load('resultados/CNN/Tensorflow/70_30/test_labels_1.npy'))
+
+criterion = nn.MSELoss()
+criterion2 = nn.L1Loss()
+
+loss1 = criterion(test_predictions, test_target)
+loss2 = criterion2(test_predictions, test_target)
+print(f"CNN Tensorflow MSE = {loss1}")
+print(f"CNN Tensorflow MAE = {loss2}")
+
+#%% plot utilityt
+import congestion_predict.plot as plt_util
+target = 2
+out_seq = 3
+label_conf = 'all'
+model_path = f'resultados/eRCNN/sequence/seq3_no_detach/eRCNN_state_dict_model_{target}.pt'
+#plt_util.plot_seq_out(target, 'all', out_seq, model_path=model_path)
+
+plt_util.plot_image(target, 'all', out_seq, model_path=model_path)

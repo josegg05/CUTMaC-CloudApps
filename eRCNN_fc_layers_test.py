@@ -6,7 +6,6 @@ import torch.nn as nn
 from torch import optim
 import time
 import json
-import sys
 
 
 class STImgSeqDataset(torch.utils.data.Dataset):

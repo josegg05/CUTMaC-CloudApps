@@ -134,6 +134,58 @@ class eRCNN(nn.Module):
         return num_features
 
 
+class eRCNNSeq(nn.Module):
+    def __init__(self, input_size, hid_error_size, output_size, out_seq=1, dev="cpu"):
+        super().__init__()
+
+        self.hid_error_size = hid_error_size
+        self.out_seq = out_seq
+        self.dev = dev
+        last_in = 256+32
+        self.conv = nn.Conv2d(
+            in_channels=input_size,
+            out_channels=32,
+            kernel_size=(3, 3),
+            stride=1
+        )
+        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(hid_error_size, 32)
+        self.lin_out = nn.Linear(last_in, output_size)
+
+    def forward(self, input, target):
+        error = self.initError(input.shape[1])
+        error = error.to(self.dev)
+        out_list = []
+        for seq in range(input.shape[0]):
+            out_in = nn.ReLU()(self.conv(input[seq]))
+            out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
+            out_in = out_in.view(-1, self.num_flat_features(out_in))
+            out_in = nn.ReLU()(self.lin_input(out_in))
+            out_err = nn.ReLU()(self.lin_error(error))
+            output = torch.cat((out_in, out_err), 1)
+            output = self.lin_out(output)
+
+            err_seq = output - target[seq]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            if seq >= input.shape[0] - self.out_seq:
+                out_list.append(output)
+
+        output = torch.cat(out_list, 1)
+        output = output.view(output.shape[0], -1, self.out_seq)
+        return output
+
+    def initError(self, batch_size):
+        return torch.zeros(batch_size, self.hid_error_size)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
+#%%
 loss_mse_filename = 'resultados/all_speed/loss_plot_test.txt'
 loss_mae_filename = 'resultados/all_speed/loss_plot_test2.txt'
 target = 2  # 0=Flow, 1=Occ, 2=Speed
@@ -219,16 +271,19 @@ else:
     detectors_pred = 1
 n_hidden = 6 * detectors_pred
 out = 1 * detectors_pred
-e_rcnn = eRCNN(3, n_hidden, out)
-e_rcnn.load_state_dict(torch.load(f'resultados/all_speed/eRCNN_state_dict_model_{target}.pt', map_location=torch.device('cpu')))
+e_rcnn = eRCNNSeq(3, n_hidden, out, out_seq=3)
+e_rcnn.load_state_dict(torch.load(f'resultados/eRCNN/sequence/seq3_no_detach/eRCNN_state_dict_model_{target}.pt', map_location=torch.device('cpu')))
 
+seq_size = 72*3
+seq_size = 72
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-img_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, target=target, seq_size=72*3)
+img_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, target=target, seq_size=seq_size)
 img_test_set, extra = torch.utils.data.random_split(img_test_set, [100000, len(img_test_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
 batch_size = 1
+valid_len = 200
 val_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, target=target)
-valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [200, 50000, len(val_test_set) - (200+50000)],
+valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [valid_len, 50000, len(val_test_set) - (valid_len+50000)],
                                                            generator=torch.Generator().manual_seed(5))
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
@@ -241,6 +296,7 @@ criterion = nn.MSELoss()  # L2 Norm
 criterion2 = nn.L1Loss()
 
 e_rcnn.eval()
+#%%
 #Good
 # losses_test_oneshot = []
 # losses_test_oneshot2 = []
@@ -303,6 +359,42 @@ e_rcnn.eval()
 #
 #         outputs_test_oneshot.append(outputs_test)
 #         targets_test_oneshot.append(targets_test[idx + i])
+
+
+#Good Seq
+with torch.no_grad():
+    #np.random.seed(seed=25)
+    for batch_idx, (inputs_test, targets_test) in enumerate(valid_loader):
+        inputs_test = inputs_test.permute(1, 0, 2, 3, 4)
+        targets_test = targets_test.permute(1, 0, 2)
+        inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
+
+        outputs_test = e_rcnn(inputs_test, targets_test)
+
+        loss = criterion(outputs_test, targets_test[-3:].permute(1, 2, 0))
+        loss2 = criterion2(outputs_test, targets_test[-3:].permute(1, 2, 0))
+
+        break
+
+print(f"MSE = {loss}")
+print(f"MAE = {loss2}")
+
+plt.figure(1)
+plt.title("Prediction image")
+plt.ylabel("section")
+plt.xlabel("timesteps(5min)")
+plt.imshow(outputs_test[0].numpy())
+plt.savefig(f"img_seq_out_{target}.png")
+plt.show()
+
+plt.figure(2)
+plt.title("Traget image")
+plt.ylabel("section")
+plt.xlabel("timesteps(5min)")
+plt.imshow(targets_test[-3:].permute(1, 2, 0)[0].numpy())
+plt.savefig(f"img_seq_target_{target}.png")
+plt.show()
+
 
 #Good
 losses_test_oneshot = []
