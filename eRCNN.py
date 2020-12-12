@@ -57,7 +57,7 @@ else:
 hid_error_size = 6 * detectors_pred
 out = 1 * detectors_pred
 
-e_rcnn = eRCNNSeq(image_seq.shape(1), hid_error_size, out, out_seq=out_seq, dev=device)
+e_rcnn = eRCNNSeq(image_seq.shape[1], hid_error_size, out, out_seq=out_seq, dev=device)
 count_parameters(e_rcnn)
 
 #%% Training
@@ -90,7 +90,7 @@ for epoch in range(epochs):  # 10 epochs
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         inputs = inputs.permute(1, 0, 2, 3, 4)
         targets = targets.permute(1, 0, 2)
-        print(inputs[0][0][0][0][:10])
+        #print(inputs[0][0][0][0][:10])
         inputs, targets = inputs.to(device), targets.to(device)
 
         optimizer.zero_grad()  # Zero the gradients
@@ -98,7 +98,7 @@ for epoch in range(epochs):  # 10 epochs
 
         outputs = e_rcnn(inputs, targets)
         loss = criterion(outputs, targets[-out_seq:].permute(1, 0, 2))
-        print(loss)
+        #print(loss)
         loss.backward()
 
         nn.utils.clip_grad_norm_(e_rcnn.parameters(), 40)  # gradient clipping norm for eRCNN
@@ -134,7 +134,7 @@ for epoch in range(epochs):  # 10 epochs
                 print('Batch Index : %d MSE : %.3f' % (batch_idx, np.mean(mse_valid)))
                 print('Batch Index : %d MAE : %.3f' % (batch_idx, np.mean(mae_valid)))
                 mse_plot_valid.append(mse_valid)
-                mae_plot_valid.append(mse_valid)
+                mae_plot_valid.append(mae_valid)
                 mse_valid = []
                 mae_valid = []
     print('--------------------------------------------------------------')
@@ -182,7 +182,7 @@ with torch.no_grad():
             # loss_plot_test.append(np.mean(losses_test))
             # loss_plot_test2.append(np.mean(losses_test2))
             mse_plot_test.append(mse_test)
-            mae_plot_test.append(mse_test)
+            mae_plot_test.append(mae_test)
             mse_test = []
             mae_test = []
 
@@ -196,8 +196,8 @@ with open(result_folder + f'final_results_{target}.txt', 'w') as filehandle:
     filehandle.write(f"Final Training LOSS = {np.mean(loss_plot_train[-10:])}\n\n")
     filehandle.write(f"Final Validation MSE = {np.mean(mse_plot_valid[-10:])}\n")
     filehandle.write(f"Final Validation MAE = {np.mean(mae_plot_valid[-10:])}\n\n")
-    filehandle.write(f"Testing MSE = {np.mean(mse_plot_valid)}\n")
-    filehandle.write(f"Testing MAE = {np.mean(mae_plot_valid)}")
+    filehandle.write(f"Testing MSE = {np.mean(mse_plot_test)}\n")
+    filehandle.write(f"Testing MAE = {np.mean(mae_plot_test)}")
 
 print(f"Final Training LOSS = {np.mean(loss_plot_train[-10:])}")
 print(f"Final Validation MSE = {np.mean(mse_plot_valid[-10:])}")
@@ -206,8 +206,8 @@ print(f"Testing MSE = {np.mean(mse_plot_test)}")
 print(f"Testing MAE = {np.mean(mae_plot_test)}")
 
 #%% Plotting
-plt_util.plot_loss('MSE', f'loss_plot_train_{target}.txt', result_folder)
-plt_util.plot_mse(f'mse_plot_valid_{target}.txt', target, result_folder)
-plt_util.plot_mae(f'mae_plot_valid_{target}.txt', target, result_folder)
-plt_util.plot_mse(f'mse_plot_test_{target}.txt', target, result_folder)
-plt_util.plot_mae(f'mae_plot_test_{target}.txt', target, result_folder)
+plt_util.plot_loss('MSE', f'loss_plot_train_{target}.txt', folder=result_folder)
+plt_util.plot_mse(f'mse_plot_valid_{target}.txt', target, folder=result_folder)
+plt_util.plot_mae(f'mae_plot_valid_{target}.txt', target, folder=result_folder)
+plt_util.plot_mse(f'mse_plot_test_{target}.txt', target, folder=result_folder)
+plt_util.plot_mae(f'mae_plot_test_{target}.txt', target, folder=result_folder)

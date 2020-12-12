@@ -7,7 +7,7 @@ import torch
 '''
 
 
-# Mean and stddev as input
+# Mean and stddev as input. Label is all values of the middle detector
 class STImageDataset(torch.utils.data.Dataset):
     def __init__(self, data_file_name, mean, stddev, image_size=72, data_size=0, pred_window=4, transforms=None):
         self.data = pd.read_csv(data_file_name)
@@ -54,7 +54,7 @@ class STImageDataset(torch.utils.data.Dataset):
         return m, s
 
 
-# Mean and stddev calculated from the input dataset
+# Mean and stddev calculated from the input dataset. Label is all values of the middle detector
 class STImageDataset2(torch.utils.data.Dataset):
     def __init__(self, data_file_name, image_size=72, data_size=0, pred_window=4, transforms=None):
         self.data = pd.read_csv(data_file_name)
@@ -99,6 +99,7 @@ class STImageDataset2(torch.utils.data.Dataset):
         return m, s
 
 
+# Mean and stddev as input. Label is the "target" value of all detectors --> the best one for image input
 class STImageDataset3(torch.utils.data.Dataset):
     def __init__(self, data_file_name, mean, stddev, image_size=72, data_size=0, pred_window=4, target=2,
                  transforms=None):
@@ -194,7 +195,7 @@ class STImgSeqDataset(torch.utils.data.Dataset):
             # image = (image-image.mean())/image.std()
             image.unsqueeze_(0)
             if self.target != 3:
-                if self.label_conf == 'mid':
+                if self.label_conf == 'mid':  # target.shape --> (seq_size, 1)
                     label = self.data[
                         ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num) + int(
                             self.detect_num / 2),
@@ -202,13 +203,19 @@ class STImgSeqDataset(torch.utils.data.Dataset):
                     label = np.array(label)
                     label = torch.from_numpy(label.astype(np.float32))
                     label.unsqueeze_(-1)
-                elif self.label_conf == 'all':
+                elif self.label_conf == 'all':  # target.shape --> (seq_size, detect_num)
                     label = self.data[
                             ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num):
                             ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
                             2 + self.target]
                     label = torch.from_numpy(label.astype(np.float32))
-                else:
+                elif self.label_conf == 'all_lin':  # target.shape --> (seq_size, detect_num*pred_window)
+                    label = self.data[
+                            ((idx + sq + self.image_size) * self.detect_num):
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
+                            2 + self.target]
+                    label = torch.from_numpy(label.astype(np.float32))
+                else:  # target.shape --> (seq_size, 1)
                     label = self.data[
                         ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num) + int(
                             self.label_conf),
@@ -226,6 +233,14 @@ class STImgSeqDataset(torch.utils.data.Dataset):
                 elif self.label_conf == 'all':
                     label = self.data[
                             ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num):
+                            ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
+                            2:]
+                    label = torch.from_numpy(label.astype(np.float32))
+                    label = torch.reshape(label, (1, -1))
+                    label.squeeze_()
+                elif self.label_conf == 'all_lin':  # target.shape --> (seq_size, detect_num*pred_window)
+                    label = self.data[
+                            ((idx + sq + self.image_size) * self.detect_num):
                             ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
                             2:]
                     label = torch.from_numpy(label.astype(np.float32))
@@ -250,6 +265,7 @@ class STImgSeqDataset(torch.utils.data.Dataset):
         return image_seq, labels_seq
 
 
+#Secuence for the EncDec 1D
 class STEncDecSeqDataset(torch.utils.data.Dataset):
     def __init__(self, data_file_name, mean, stddev, image_size=72, data_size=0, pred_window=4, target=2,
                  transforms=None):

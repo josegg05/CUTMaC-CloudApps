@@ -234,6 +234,67 @@ class eRCNNSeq(nn.Module):
         return num_features
 
 
+class eRCNNSeqLin(nn.Module):
+    def __init__(self, input_size, hid_error_size, output_size, fc_pre_outs=[], dev="cpu", ):
+        super().__init__()
+
+        self.hid_error_size = hid_error_size
+        self.dev = dev
+        self.n_fc = len(fc_pre_outs)
+        last_in = 256+32
+        self.conv = nn.Conv2d(
+            in_channels=input_size,
+            out_channels=32,
+            kernel_size=(3, 3),
+            stride=1
+        )
+        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(hid_error_size, 32)
+
+        if self.n_fc >= 1:
+            self.lin1 = nn.Linear(last_in, fc_pre_outs[0])
+            last_in = fc_pre_outs[0]
+        if self.n_fc >= 2:
+            self.lin2 = nn.Linear(last_in, fc_pre_outs[1])
+            last_in = fc_pre_outs[1]
+        if self.n_fc >= 3:
+            self.lin3 = nn.Linear(last_in, fc_pre_outs[2])
+            last_in = fc_pre_outs[2]
+        self.lin_out = nn.Linear(last_in, output_size)
+
+    def forward(self, input, target):
+        error = self.initError(input.shape[1])
+        error = error.to(self.dev)
+        for seq in range(input.shape[0]):
+            out_in = nn.ReLU()(self.conv(input[seq]))
+            out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
+            out_in = out_in.view(-1, self.num_flat_features(out_in))
+            out_in = nn.ReLU()(self.lin_input(out_in))
+            out_err = nn.ReLU()(self.lin_error(error))
+            output = torch.cat((out_in, out_err), 1)
+            if self.n_fc >= 1:
+                output = nn.ReLU()(self.lin1(output))
+            if self.n_fc >= 2:
+                output = nn.ReLU()(self.lin2(output))
+            if self.n_fc >= 3:
+                output = nn.ReLU()(self.lin3(output))
+            output = self.lin_out(output)
+
+            err_seq = output - target[seq]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+        return output
+
+    def initError(self, batch_size):
+        return torch.zeros(batch_size, self.hid_error_size)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
 '''
 * Encoder (Convolutional) Decoder (Recurrent)
 Models of an Encoder Decoder, where the encoder is a Convolutional block (6 Convolutional

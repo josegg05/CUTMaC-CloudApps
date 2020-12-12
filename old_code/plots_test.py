@@ -6,7 +6,6 @@ from congestion_predict.data_sets import STImgSeqDataset
 import torch
 from torch import nn
 import json
-from prettytable import PrettyTable
 
 
 def plot_mse(loss_mse_filename, target, folder=''):
@@ -113,81 +112,7 @@ def plot_loss(loss_name, loss_filename, tt='Test', folder=''):
     plt.show()
 
 
-def print_loss_table(target, label_conf, out_seq, model=None, model_path='', batch_size=100, device=None, seed=None):
-    if seed is not None:
-        torch.manual_seed(seed=seed)
-    if label_conf == 'all':
-        detectors_pred = 27
-    else:
-        detectors_pred = 1
-    hid_error_size = 6 * detectors_pred
-    out = 1 * detectors_pred
-    if device is None:
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
-        # device = "cpu"
-
-    if model is None:
-        e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq, dev=device)
-        e_rcnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
-    else:
-        e_rcnn = model
-
-    count_parameters(e_rcnn)
-    val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-    val_test_set = STImgSeqDataset(val_test_data_file_name, data_size=100000, label_conf=label_conf, target=target)
-    val_test_loader = torch.utils.data.DataLoader(val_test_set, batch_size=batch_size, shuffle=True)
-
-    e_rcnn.to(device)  # Put the network on GPU if present
-    criterion = nn.MSELoss(reduction='none')  # L2 Norm
-    criterion2 = nn.L1Loss(reduction='none')
-    e_rcnn.eval()
-    with torch.no_grad():
-        for batch_idx, (inputs_test, targets_test) in enumerate(val_test_loader):
-            inputs_test = inputs_test.transpose(0, 1)
-            targets_test = targets_test.transpose(0, 1)
-            inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
-
-            outputs_test = e_rcnn(inputs_test, targets_test)
-
-            loss = criterion(outputs_test, targets_test[-out_seq:].transpose(0, 1))
-            loss2 = criterion2(outputs_test, targets_test[-out_seq:].transpose(0, 1))
-            break
-
-    loss2 = torch.mean(loss2, 0).transpose(0, 1)
-    tab_1 = PrettyTable()
-    tab_2 = PrettyTable()
-    tab_3 = PrettyTable()
-    tab_1.field_names = ["time_1", "time_2", "time_3", "time_4"]
-    tab_2.field_names = ["time_1", "time_2", "time_3", "time_4"]
-    tab_1.add_rows(loss2.numpy())
-    tab_2.add_row(torch.mean(loss2, 0).numpy())
-    tab_3.add_column("mean_detectors", torch.mean(loss2, 1).numpy())
-    print("MAE per detector per time-step")
-    print(tab_1)
-    print("MAE per time-step")
-    print(tab_2)
-    print("MAE per detector")
-    print(tab_3)
-
-    loss = torch.mean(loss, 0).transpose(0, 1)
-    tab_1 = PrettyTable()
-    tab_2 = PrettyTable()
-    tab_3 = PrettyTable()
-    tab_1.field_names = ["time_1", "time_2", "time_3", "time_4"]
-    tab_2.field_names = ["time_1", "time_2", "time_3", "time_4"]
-    tab_1.add_rows(loss.numpy())
-    tab_2.add_row(torch.mean(loss, 0).numpy())
-    tab_3.add_column("mean_detectors", torch.mean(loss, 1).numpy())
-    print("MSE per detector per time-step")
-    print(tab_1)
-    print("MSE per time-step")
-    print(tab_2)
-    print("MSE per detector")
-    print(tab_3)
-
-
 def plot_seq_out(target, label_conf, out_seq, model=None, model_path='', device=None, seed=None, folder=''):
-    print('********************** Print a single sequence output **********************')
     if label_conf == 'all':
         detectors_pred = 27
     else:
@@ -205,7 +130,7 @@ def plot_seq_out(target, label_conf, out_seq, model=None, model_path='', device=
     else:
         e_rcnn = model
     count_parameters(e_rcnn)
-    val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+    val_test_data_file_name = "../datasets/california_paper_eRCNN/I5-N-3/2016.csv"
     val_test_set = STImgSeqDataset(val_test_data_file_name, data_size=100000, label_conf=label_conf, target=target)
 
     e_rcnn.to(device)  # Put the network on GPU if present
@@ -229,22 +154,6 @@ def plot_seq_out(target, label_conf, out_seq, model=None, model_path='', device=
     print(f"MSE = {loss}")
     print(f"MAE = {loss2}")
 
-    tab_1 = PrettyTable()
-    tab_2 = PrettyTable()
-    tab_3 = PrettyTable()
-    tab_1.field_names = ["time_1", "time_2", "time_3", "time_4"]
-    tab_2.field_names = ["time_1", "time_2", "time_3", "time_4"]
-    loss_sensors = torch.nn.functional.l1_loss(outputs_test, targets_test[-out_seq:].permute(1, 0, 2), reduction='none')[0].transpose(0, 1)
-    tab_1.add_rows(loss_sensors.numpy())
-    tab_2.add_row(torch.mean(loss_sensors, 0).numpy())
-    tab_3.add_column("mean_detectors", torch.mean(loss_sensors, 1).numpy())
-    print("MAE per detector per time-step")
-    print(tab_1)
-    print("MAE per time-step")
-    print(tab_2)
-    print("MAE per detector")
-    print(tab_3)
-
     plt.figure()
     plt.title("Prediction image")
     plt.ylabel("section")
@@ -262,10 +171,7 @@ def plot_seq_out(target, label_conf, out_seq, model=None, model_path='', device=
     plt.show()
 
 
-def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=72, device=None, seed=None, folder='', shuffle=False):
-    print('********************** Print a predicted image **********************')
-    if seed is not None:
-        torch.manual_seed(seed=seed)
+def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=72, device=None, seed=None, folder=''):
     if label_conf == 'all':
         detectors_pred = 27
     else:
@@ -283,10 +189,8 @@ def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=
     else:
         e_rcnn = model
     count_parameters(e_rcnn)
-    val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+    val_test_data_file_name = "../datasets/california_paper_eRCNN/I5-N-3/2016.csv"
     val_test_set = STImgSeqDataset(val_test_data_file_name, data_size=100000, label_conf=label_conf, target=target)
-    if shuffle:
-        val_test_set, test_set = torch.utils.data.random_split(val_test_set, [100000, 0])
 
     e_rcnn.to(device)  # Put the network on GPU if present
     criterion = nn.MSELoss()  # L2 Norm
@@ -314,14 +218,13 @@ def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=
             loss2 = criterion2(outputs_test, targets_test[-out_seq:].permute(1, 0, 2))
             losses_test_oneshot.append(loss.item())
             losses_test_oneshot2.append(loss2.item())
-
             outputs_test_oneshot.append(outputs_test[-1, -1:])
             targets_test_oneshot.append(targets_test[-out_seq:].permute(1, 0, 2)[-1, -1:])
 
             for j in range(27):
                 mae_each_sen[j].append(criterion2(outputs_test[0][-1][j], targets_test[-out_seq:].permute(1, 0, 2)[0][-1][j]))
 
-    print(f"MSE = {np.mean(losses_test_oneshot)}")
+    print(f"MAE pre = {np.mean(losses_test_oneshot)}")
     print(f"MAE = {np.mean(losses_test_oneshot2)}")
 
     mae_mean_each_sen = [0 for i in range(27)]
@@ -362,21 +265,21 @@ def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=
     plt.savefig(folder + f"diff_{target}.png")
     plt.show()
 
-    # plt.figure()
-    # plt.plot(losses_test_oneshot)
-    # plt.title("Training MSE")
-    # plt.ylabel("MSE")
-    # plt.xlabel("Bacthx100")
-    # plt.grid()
-    # plt.savefig(folder + f"train_mse_oneshot_{target}.png")
-    # plt.show()
-    #
-    # plt.figure()
-    # plt.plot(losses_test_oneshot2)
-    # # plt.ylim(0, 3)
-    # plt.title("Testing MAE")
-    # plt.ylabel("MAE")
-    # plt.xlabel("Bacth")
-    # plt.grid()
-    # plt.savefig(folder + f"test_mae_oneshot_{target}.png")
-    # plt.show()
+    plt.figure()
+    plt.plot(losses_test_oneshot)
+    plt.title("Training MSE")
+    plt.ylabel("MSE")
+    plt.xlabel("Bacthx100")
+    plt.grid()
+    plt.savefig(folder + f"train_mse_oneshot_{target}.png")
+    plt.show()
+
+    plt.figure()
+    plt.plot(losses_test_oneshot2)
+    # plt.ylim(0, 3)
+    plt.title("Testing MAE")
+    plt.ylabel("MAE")
+    plt.xlabel("Bacth")
+    plt.grid()
+    plt.savefig(folder + f"test_mae_oneshot_{target}.png")
+    plt.show()

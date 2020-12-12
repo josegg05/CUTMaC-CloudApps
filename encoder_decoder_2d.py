@@ -12,7 +12,16 @@ import json
 
 
 target = 2
+n_inputs_enc = 3  #nm
+n_inputs_dec = 3*27  #nm
+n_outputs = 27  #nm
+seqlen_rec = 12  # 12/24/36/72
+hidden_size_rec = 50  # 7/20/40/50/70 --> best 50
+num_layers_rec = 2   # 2/3/4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+epochs = 10000
+batch_size = 50
+patience = 5
 folder = 'resultados/EncoderDecoder/'
 result_folder = folder + 'Results/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
@@ -45,21 +54,12 @@ print(label)
 print(label.shape)
 
 # %% Model
-n_inputs_enc = 3  #nm
-n_inputs_dec = 3*27  #nm
-n_outputs = 27  #nm
-seqlen_rec = 12
-hidden_size_rec = 50  # 7/20/40/50
-num_layers_rec = 2
-
 encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=n_outputs, hidden_size=hidden_size_rec,
                                num_layers=num_layers_rec).to(device)
 
 encod_decod = encod_decod.float()
 count_parameters(encod_decod)
 # %% Training
-batch_size = 50
-patience = 5
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
@@ -72,7 +72,6 @@ min_loss = 100000
 loss_plot_train = []
 mse_plot_valid = []
 mae_plot_valid = []
-epochs = 10
 for epoch in range(epochs):
     print(f"******************Epoch {epoch}*******************\n\n")
     # training step
@@ -134,7 +133,7 @@ for epoch in range(epochs):
         min_loss = np.mean(mse_plot_valid[-10:])
         no_better = 0
         print('Saving best model\n')
-        torch.save(encod_decod.state_dict(), folder + 'best_observer.pt')
+        torch.save(encod_decod.state_dict(), result_folder + 'best_observer.pt')
     else:
         no_better += 1
         if no_better >= patience:
@@ -161,10 +160,10 @@ mse_test = []
 mae_test = []
 with torch.no_grad():
     for batch_idx, (inputs_test, targets_test) in enumerate(test_loader):
-        targets = torch.unsqueeze(targets, 1)
-        X_r_pre = input.transpose(1, 3)
+        targets_test = torch.unsqueeze(targets_test, 1)
+        X_r_pre = inputs_test.transpose(1, 3)
         X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
-        X_c, X_r, Y = input.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets.to(device)
+        X_c, X_r, Y = inputs_test.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets_test.to(device)
 
         Y_pred = encod_decod(X_c.float(), X_r.float())
 
@@ -190,8 +189,8 @@ with open(result_folder + f'final_results_{target}.txt', 'w') as filehandle:
     filehandle.write(f"Final Training LOSS = {np.mean(loss_plot_train[-10:])}\n\n")
     filehandle.write(f"Final Validation MSE = {np.mean(mse_plot_valid[-10:])}\n")
     filehandle.write(f"Final Validation MAE = {np.mean(mae_plot_valid[-10:])}\n\n")
-    filehandle.write(f"Testing MSE = {np.mean(mse_plot_valid)}\n")
-    filehandle.write(f"Testing MAE = {np.mean(mae_plot_valid)}")
+    filehandle.write(f"Testing MSE = {np.mean(mse_plot_test)}\n")
+    filehandle.write(f"Testing MAE = {np.mean(mae_plot_test)}")
 
 print(f"Final Training LOSS = {np.mean(loss_plot_train[-10:])}")
 print(f"Final Validation MSE = {np.mean(mse_plot_valid[-10:])}")
@@ -200,8 +199,8 @@ print(f"Testing MSE = {np.mean(mse_plot_test)}")
 print(f"Testing MAE = {np.mean(mae_plot_test)}")
 
 #%% Plotting
-plt_util.plot_loss('MSE', f'loss_plot_train_{target}.txt', result_folder)
-plt_util.plot_mse(f'mse_plot_valid_{target}.txt', target, result_folder)
-plt_util.plot_mae(f'mae_plot_valid_{target}.txt', target, result_folder)
-plt_util.plot_mse(f'mse_plot_test_{target}.txt', target, result_folder)
-plt_util.plot_mae(f'mae_plot_test_{target}.txt', target, result_folder)
+plt_util.plot_loss('MSE', f'loss_plot_train_{target}.txt', folder=result_folder)
+plt_util.plot_mse(f'mse_plot_valid_{target}.txt', target, folder=result_folder)
+plt_util.plot_mae(f'mae_plot_valid_{target}.txt', target, folder=result_folder)
+plt_util.plot_mse(f'mse_plot_test_{target}.txt', target, folder=result_folder)
+plt_util.plot_mae(f'mae_plot_test_{target}.txt', target, folder=result_folder)
