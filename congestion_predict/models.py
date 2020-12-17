@@ -126,6 +126,52 @@ passed through a linear layers to finally produce a prediction
 # efficient because the error have to be detached to allow the backpropagation. You can add some extra linear
 # layers, but it doesn't affect to much the results
 class eRCNN(nn.Module):
+    def __init__(self, input_size, hid_error_size, output_size, dev='cpu'):
+        super().__init__()
+
+        self.hid_error_size = hid_error_size
+        last_in = 256+32
+        self.dev = dev
+        self.conv = nn.Conv2d(
+            in_channels=input_size,
+            out_channels=32,
+            kernel_size=(3, 3),
+            stride=1
+        )
+        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(hid_error_size, 32)
+        self.lin_out = nn.Linear(last_in, output_size)
+
+    def forward(self, input, target):
+        error = self.initError(input.shape[1])
+        error = error.to(self.dev)
+        for seq in range(input.shape[0]):
+            out_in = nn.ReLU()(self.conv(input[seq]))
+            out_in = nn.AvgPool2d(2)(
+                out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
+            out_in = out_in.view(-1, self.num_flat_features(out_in))
+            out_in = nn.ReLU()(self.lin_input(out_in))
+            out_err = nn.ReLU()(self.lin_error(error))
+            output = torch.cat((out_in, out_err), 1)
+            output = self.lin_out(output)
+
+            err_seq = output - target[seq]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+        return output
+
+    def initError(self, batch_size):
+        return torch.zeros(batch_size, self.hid_error_size)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
+
+class eRCNN_fc_test(nn.Module):
     def __init__(self, input_size, hid_error_size, output_size, n_fc=0, fc_outs=[256]):
         super().__init__()
 
@@ -295,6 +341,69 @@ class eRCNNSeqLin(nn.Module):
             num_features *= s
         return num_features
 
+
+class eRCNNSeqIter(nn.Module):
+    def __init__(self, input_size, hid_error_size, output_size, out_seq=1, dev="cpu"):
+        super().__init__()
+
+        self.hid_error_size = hid_error_size
+        self.out_seq = out_seq
+        self.dev = dev
+        last_in = 256+32
+        self.conv = nn.Conv2d(
+            in_channels=input_size,
+            out_channels=32,
+            kernel_size=(3, 3),
+            stride=1
+        )
+        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(hid_error_size, 32)
+        self.lin_h = nn.Linear(last_in, 256)
+        self.lin_out = nn.Linear(last_in, output_size)
+
+    def forward(self, input, target):
+        error = self.initError(input.shape[1])
+        error = error.to(self.dev)
+        for seq in range(input.shape[0]):
+            out_in = nn.ReLU()(self.conv(input[seq]))
+            out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
+            out_in = out_in.view(-1, self.num_flat_features(out_in))
+            out_in = nn.ReLU()(self.lin_input(out_in))
+            out_err = nn.ReLU()(self.lin_error(error))
+            output_pre = torch.cat((out_in, out_err), 1)
+            output = self.lin_out(output_pre)
+
+            err_seq = output - target[seq]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+        out_list = []
+        out_list.append(output)
+        for seq in range(self.out_seq-1):
+            out_h = self.lin_h(output_pre)
+            out_err = nn.ReLU()(self.lin_error(error))
+            output_pre = torch.cat((out_h, out_err), 1)
+            output = self.lin_out(output_pre)
+            out_list.append(output)
+
+            err_seq = output - target[seq + input.shape[0]]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+        output_final = torch.cat(out_list, 1)
+        output_final = output_final.view(output_final.shape[0], self.out_seq, -1)
+        #output_final = output_final.transpose(1, 2)
+        return output_final
+
+    def initError(self, batch_size):
+        return torch.zeros(batch_size, self.hid_error_size)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
+
 '''
 * Encoder (Convolutional) Decoder (Recurrent)
 Models of an Encoder Decoder, where the encoder is a Convolutional block (6 Convolutional
@@ -440,6 +549,59 @@ class EncoderConv2D(nn.Module):
         return num_features
 
 
+class EncoderConv2DL(nn.Module):
+    def __init__(self, n_inputs, n_output_hs=30,  n_output_nl=1, first_lin_size=256):
+        super(EncoderConv2DL, self).__init__()
+
+        '''
+        Conv1d : input (N, C_in, L_in) -> (N, C_out, L_out)
+            N is batch size, C is channels and L is length of signal sequence
+
+        n_output lo utilizamos para transformarlo en el espacio latente
+        n_output_hs es el espacio latente del hidden size de encoder recurrent
+        n_output_nl es la cantidad de layers que tiene un encoder recurrente
+
+        '''
+        conv_out_channels = 32
+        self.conv = nn.Conv2d(
+            in_channels=n_inputs,
+            out_channels=conv_out_channels,
+            kernel_size=(3, 3),
+            stride=1
+        )
+
+        # Salida para retransformar el espacio en un estado latene.
+        self.linear1 = nn.Linear(in_features=12 * 35, out_features=first_lin_size)  # in_features=Lout3
+        self.linear2 = nn.Linear(in_features=first_lin_size, out_features=n_output_hs)
+        self.linear3 = nn.Linear(in_features=conv_out_channels, out_features=n_output_nl)  # in_features=channels[2]
+
+    def forward(self, input):
+        h = nn.ReLU()(self.conv(input))
+        h = nn.AvgPool2d(2)(h)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
+        h = h.view(h.shape[0], h.shape[1], -1)  # h = h.view(-1, h.shape[1], self.num_flat_features(h))
+
+        # Luego quiero retransofrmar esto a un estado latente
+        # print(h.shape) # torch.Size([50, 32, n])
+        h = self.linear1(h)
+        # print(h.shape) # torch.Size([50, 32, first_lin_size])
+        h = self.linear2(h)
+        # print(h.shape) # torch.Size([50, 32, 7])
+        h = self.linear3(h.transpose(1, 2))
+        # print(h.shape) # torch.Size([50, 7, 2])
+        h = h.transpose(0, 1).transpose(0, 2)
+        # print(h.shape) # torch.Size([2, 50, 7]) = [num_layers_rec_dec, batch_size, hidden_size_rec]
+
+        # print(h.shape)
+        return h
+
+    def num_flat_features(self, x):
+        size = x.size()[2:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
+
 class DecoderRec(nn.Module):
     def __init__(self, n_inputs, n_outputs, hidden_size_in, num_layers):
         super(DecoderRec, self).__init__()
@@ -463,6 +625,34 @@ class DecoderRec(nn.Module):
         h = h.transpose(1, 2)
         size = h.shape
         h = h[:, :, -1].view(size[0], size[1], 1)
+        # h.shape = (batch_size, hidden_size, 1)
+        y = self.linear2(h.transpose(1, 2))
+        return y
+
+
+class DecoderRecL(nn.Module):
+    def __init__(self, n_inputs, n_outputs, hidden_size_in, num_layers):
+        super(DecoderRecL, self).__init__()
+
+        self.gru = nn.GRU(input_size=n_inputs, hidden_size=hidden_size_in, num_layers=num_layers, batch_first=True,
+                          bidirectional=False, dropout=0.2)
+        self.linear1 = nn.Linear(in_features=num_layers, out_features=1)
+        self.linear2 = nn.Linear(in_features=hidden_size_in, out_features=n_outputs)
+
+    def forward(self, x, h):
+        '''
+
+        :param x: shape = (batch_size, seqlen, n_inputs)
+        :param h: shape = (num_layers_rec_dec, batch_size, hidden_size_rec_dec)
+        :return: y: shape = (batch_size, 1, n_outputs)
+        '''
+
+        x, h = self.gru(x, h)
+        h = h.transpose(0, 1)
+        h = self.linear1(h.transpose(1, 2))
+        #h = h.transpose(1, 2)
+        #size = h.shape
+        #h = h[:, :, -1].view(size[0], size[1], 1)
         # h.shape = (batch_size, hidden_size, 1)
         y = self.linear2(h.transpose(1, 2))
         return y
@@ -495,12 +685,21 @@ class EncoderDecoder2D(nn.Module):
     Decoder rec
     '''
 
-    def __init__(self, n_inputs_enc, n_inputs_dec, n_outputs, hidden_size, num_layers):
+    def __init__(self, n_inputs_enc, n_inputs_dec, n_outputs, hidden_size, num_layers, lin1_conv=False, lin1_rec=False,
+                 first_lin_size=256):
         super(EncoderDecoder2D, self).__init__()
+        if lin1_conv:
+            self.encoder_c = EncoderConv2DL(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers,
+                                            first_lin_size=first_lin_size)
+        else:
+            self.encoder_c = EncoderConv2D(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers)
 
-        self.encoder_c = EncoderConv2D(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers)
-        self.decoder_r = DecoderRec(n_inputs=n_inputs_dec, n_outputs=n_outputs, hidden_size_in=hidden_size,
-                                    num_layers=num_layers)
+        if lin1_rec:
+            self.decoder_r = DecoderRecL(n_inputs=n_inputs_dec, n_outputs=n_outputs, hidden_size_in=hidden_size,
+                                         num_layers=num_layers)
+        else:
+            self.decoder_r = DecoderRec(n_inputs=n_inputs_dec, n_outputs=n_outputs, hidden_size_in=hidden_size,
+                                        num_layers=num_layers)
 
     def forward(self, x_c, x_r):
         h = self.encoder_c(x_c).contiguous()

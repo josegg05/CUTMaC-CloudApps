@@ -386,14 +386,14 @@ print(f"CNN Tensorflow MSE = {loss1}")
 print(f"CNN Tensorflow MAE = {loss2}")
 
 #%% plot utilityt
-import congestion_predict.plot as plt_util
+import congestion_predict.evaluation as eval_util
 target = 2
 out_seq = 3
 label_conf = 'all'
 model_path = f'resultados/eRCNN/sequence/seq3_no_detach/eRCNN_state_dict_model_{target}.pt'
-#plt_util.plot_seq_out(target, 'all', out_seq, model_path=model_path)
+#eval_util.plot_seq_out(target, 'all', out_seq, model_path=model_path)
 
-plt_util.plot_image(target, 'all', out_seq, model_path=model_path)
+eval_util.plot_image(target, 'all', out_seq, model_path=model_path)
 
 #%% numpy view
 import numpy as np
@@ -411,3 +411,39 @@ y = np.array([
 x.field_names = ["City name", "Area", "Population", "Annual Rainfall"]
 x.add_rows(y)
 print(x)
+
+
+import numpy as np
+import torch
+caca = np.array([1,1,1,1,5,1,1,5,1,1])
+coco = torch.from_numpy(caca)
+cucu = torch.tensor(caca)
+caca[caca > 3] = 2
+coco[coco < 2] = 0
+print(caca)
+print(coco)
+print(cucu)
+
+
+import torch
+lolo = torch.tensor([[1,2,3],[4,5,6]], dtype=torch.float32).unsqueeze_(0)
+targ = torch.tensor([[4,7,13],[4,5,6]], dtype=torch.float32).unsqueeze_(0)
+loss = torch.nn.MSELoss()
+print(lolo.shape)
+print(loss(lolo, targ))
+print(loss(lolo.view(1,-1), targ.view(1,-1)))
+
+
+import torch
+coco = torch.tensor([[[1, 2, 3], [4, 5, 6]], [[1, 2, 3], [4, 5, 6]]], dtype=torch.float32)
+print(torch.mean(coco, (0, 1)))
+
+
+
+with open('dog_breeds.txt', 'w') as reader:
+    # Read & print the entire file
+    reader.write("me cago en esta mierda")
+
+with open('dog_breeds.txt', 'r') as reader:
+    # Read & print the entire file
+    print(reader.read())

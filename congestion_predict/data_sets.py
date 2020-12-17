@@ -215,6 +215,24 @@ class STImgSeqDataset(torch.utils.data.Dataset):
                             ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
                             2 + self.target]
                     label = torch.from_numpy(label.astype(np.float32))
+                elif self.label_conf == 'all_iter':  # target.shape --> (seq_size + pred_window, detect_num)
+                    if sq != range(self.seq_size)[-1]:  # not the last sq
+                        label = self.data[
+                                ((idx + sq + self.image_size) * self.detect_num):
+                                ((idx + sq + self.image_size + 1) * self.detect_num),
+                                2 + self.target]
+                        label = torch.from_numpy(label.astype(np.float32))
+                    else:
+                        for wind in range(self.pred_window):
+                            label = self.data[
+                                    ((idx + sq + self.image_size + wind) * self.detect_num):
+                                    ((idx + sq + self.image_size + wind + 1) * self.detect_num),
+                                    2 + self.target]
+                            label = torch.from_numpy(label.astype(np.float32))
+                            if wind != range(self.pred_window)[-1]:  # not last window
+                                label.unsqueeze_(0)
+                                labels_seq.append(label)
+
                 else:  # target.shape --> (seq_size, 1)
                     label = self.data[
                         ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num) + int(

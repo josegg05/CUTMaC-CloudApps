@@ -7,7 +7,7 @@ from torch import optim
 from congestion_predict.data_sets import STImgSeqDataset
 from congestion_predict.models import eRCNNSeqLin
 from congestion_predict.utilities import count_parameters
-import congestion_predict.plot as plt_util
+import congestion_predict.evaluation as eval_util
 import time
 import json
 
@@ -165,9 +165,9 @@ for extra_fc in extra_fc_list:
         filehandle.write(f"Final Validation MAE = {np.mean(mae_plot_valid[-10:])}\n\n")
 
     if np.mean(mae_plot_valid) < best_loss:
-        with open(result_folder + f'best_model.txt', 'w') as filehandle:
-            filehandle.write(f"best model is extra_fc {best_extra_fc}")
         best_loss = np.mean(mae_plot_valid)
         best_extra_fc = extra_fc
         best_model = f"ercnn_{extra_fc}"
+        with open(result_folder + f'best_model.txt', 'w') as filehandle:
+            filehandle.write(f"best model is extra_fc {best_extra_fc}")
     print(f"best model is extra_fc {best_extra_fc}")

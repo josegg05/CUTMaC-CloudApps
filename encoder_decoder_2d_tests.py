@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import time
 from congestion_predict.utilities import count_parameters
-import congestion_predict.plot as plt_util
+import congestion_predict.evaluation as eval_util
 import json
 
 
@@ -18,12 +18,14 @@ n_outputs = 27  #nm
 seqlen_rec = 12  # 6/12/24/36/72 --> best 12~6
 hidden_size_rec = 50  # 7/20/40/50/70 --> best 50
 num_layers_rec = 2   # 2/3/4 -- best 2
+lin1_rec = False  # True/False --> best True
+lin1_conv = False; first_lin_size = 128  # False/True; 128/True; 256 --> best
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 epochs = 100
 batch_size = 50
 patience = 5
 folder = 'resultados/EncoderDecoder/'
-test = 'num_layers_rec'  # 'num_layers_rec'
+test = 'lin1_conv_active'  # num_layers_rec / seqlen_rec / lin1_rec_active
 result_folder = folder + 'Results/' + test + '/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
@@ -54,15 +56,23 @@ print(image[0].mean())
 print(label)
 print(label.shape)
 
-#seqlen_rec_list = [6]#,12, 24, 36, 72]
-num_layers_rec_list = [2, 3, 4]
-#for seqlen_rec in seqlen_rec_list:
-for num_layers_rec in num_layers_rec_list:
-    #plot_ind = seqlen_rec
-    plot_ind = num_layers_rec
+#seqlen_rec_list = [6]#,12, 24, 36, 72]  # 1
+#num_layers_rec_list = [2, 3, 4]  # 2
+#lin1_rec_active = [True]  # 3
+lin1_conv = True; first_lin_size_list = [128, 256]  # 4
+#for seqlen_rec in seqlen_rec_list:  # 1
+#for num_layers_rec in num_layers_rec_list:  # 2
+#for lin1_rec in lin1_rec_active:  # 3
+for first_lin_size in first_lin_size_list:  # 4
+    #plot_ind = seqlen_rec  # 1
+    #plot_ind = num_layers_rec  # 2
+    #plot_ind = 1  # 3
+    plot_ind = first_lin_size  # 3
     # %% Model
-    encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=n_outputs, hidden_size=hidden_size_rec,
-                                   num_layers=num_layers_rec).to(device)
+    encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=n_outputs,
+                                   hidden_size=hidden_size_rec,
+                                   num_layers=num_layers_rec, lin1_conv=lin1_conv, lin1_rec=lin1_rec,
+                                   first_lin_size=first_lin_size).to(device)
 
     encod_decod = encod_decod.float()
     count_parameters(encod_decod)
@@ -206,8 +216,8 @@ for num_layers_rec in num_layers_rec_list:
     print(f"Testing MAE = {np.mean(mae_plot_test)}")
 
 #%% Plotting
-plt_util.plot_loss('MSE', f'loss_plot_train_{target}_{plot_ind}.txt', folder=result_folder)
-plt_util.plot_mse(f'mse_plot_valid_{target}_{plot_ind}.txt', target, folder=result_folder)
-plt_util.plot_mae(f'mae_plot_valid_{target}_{plot_ind}.txt', target, folder=result_folder)
-plt_util.plot_mse(f'mse_plot_test_{target}_{plot_ind}.txt', target, folder=result_folder)
-plt_util.plot_mae(f'mae_plot_test_{target}_{plot_ind}.txt', target, folder=result_folder)
+eval_util.plot_loss('MSE', f'loss_plot_train_{target}_{plot_ind}.txt', folder=result_folder)
+eval_util.plot_mse(f'mse_plot_valid_{target}_{plot_ind}.txt', target, folder=result_folder)
+eval_util.plot_mae(f'mae_plot_valid_{target}_{plot_ind}.txt', target, folder=result_folder)
+eval_util.plot_mse(f'mse_plot_test_{target}_{plot_ind}.txt', target, folder=result_folder)
+eval_util.plot_mae(f'mae_plot_test_{target}_{plot_ind}.txt', target, folder=result_folder)

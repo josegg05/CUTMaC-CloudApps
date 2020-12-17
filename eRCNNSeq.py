@@ -6,7 +6,7 @@ from torch import optim
 from congestion_predict.data_sets import STImgSeqDataset
 from congestion_predict.models import eRCNNSeq
 from congestion_predict.utilities import count_parameters
-import congestion_predict.plot as plt_util
+import congestion_predict.evaluation as eval_util
 import time
 import json
 
@@ -16,6 +16,7 @@ val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
 label_conf = 'all'
 target = 2  # target: 0-Flow, 1-Occ, 2-Speed, 3-All
 out_seq = 4  # Size of the out sequence
+pred_window = 4
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
 epochs = 10
@@ -29,10 +30,10 @@ cali_dataset_2015 = pd.read_csv("datasets/california_paper_eRCNN/I5-N-3/2015.csv
 print(cali_dataset_2015.head())
 print(cali_dataset_2015.describe())
 
-train_set = STImgSeqDataset(train_data_file_name, label_conf=label_conf, target=target)
+train_set = STImgSeqDataset(train_data_file_name, label_conf=label_conf, pred_window=pred_window, target=target)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
-val_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, target=target)
+val_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, pred_window=pred_window, target=target)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
                                                            generator=torch.Generator().manual_seed(5))
 
@@ -206,8 +207,8 @@ print(f"Testing MSE = {np.mean(mse_plot_test)}")
 print(f"Testing MAE = {np.mean(mae_plot_test)}")
 
 #%% Plotting
-plt_util.plot_loss('MSE', f'loss_plot_train_{target}.txt', folder=result_folder)
-plt_util.plot_mse(f'mse_plot_valid_{target}.txt', target, folder=result_folder)
-plt_util.plot_mae(f'mae_plot_valid_{target}.txt', target, folder=result_folder)
-plt_util.plot_mse(f'mse_plot_test_{target}.txt', target, folder=result_folder)
-plt_util.plot_mae(f'mae_plot_test_{target}.txt', target, folder=result_folder)
+eval_util.plot_loss('MSE', f'loss_plot_train_{target}.txt', folder=result_folder)
+eval_util.plot_mse(f'mse_plot_valid_{target}.txt', target, folder=result_folder)
+eval_util.plot_mae(f'mae_plot_valid_{target}.txt', target, folder=result_folder)
+eval_util.plot_mse(f'mse_plot_test_{target}.txt', target, folder=result_folder)
+eval_util.plot_mae(f'mae_plot_test_{target}.txt', target, folder=result_folder)
