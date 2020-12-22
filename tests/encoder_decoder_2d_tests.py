@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from congestion_predict.data_sets import STImageDataset3
+from congestion_predict.data_sets import STImageDataset
 from congestion_predict.models import EncoderDecoder2D
 import numpy as np
 import pandas as pd
@@ -11,10 +11,12 @@ import congestion_predict.evaluation as eval_util
 import json
 
 
-target = 2
+pred_variable = 'speed'
+pred_detector = 'all'
+pred_type = 'solo'  # 'solo'; 'mean'
+pred_window = 4
 n_inputs_enc = 3  #nm
 n_inputs_dec = 3*27  #nm
-n_outputs = 27  #nm
 seqlen_rec = 12  # 6/12/24/36/72 --> best 12~6
 hidden_size_rec = 50  # 7/20/40/50/70 --> best 50
 num_layers_rec = 2   # 2/3/4 -- best 2
@@ -29,18 +31,23 @@ test = 'lin1_conv_active'  # num_layers_rec / seqlen_rec / lin1_rec_active
 result_folder = folder + 'Results/' + test + '/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
-data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
+variables_list = ['flow', 'occupancy', 'speed']
+target = variables_list.index(pred_variable)
+
+data_file_name = "../datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 data = pd.read_csv(data_file_name)
 data = data.to_numpy()
 mean = np.mean(data, axis=0)[2:]
 stddev = np.std(data, axis=0)[2:]
 
-train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImageDataset3(train_data_file_name, mean, stddev, target=target)
+train_data_file_name = "../datasets/california_paper_eRCNN/I5-N-3/2015.csv"
+train_set = STImageDataset(train_data_file_name, mean=mean, stddev=mean, pred_detector=pred_detector,
+                            pred_type=pred_type, pred_window=pred_window, target=target)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
-val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-val_test_set = STImageDataset3(val_test_data_file_name, mean, stddev, target=target)
+val_test_data_file_name = "../datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+val_test_set = STImageDataset(val_test_data_file_name, mean=mean, stddev=mean, pred_detector=pred_detector,
+                            pred_type=pred_type, pred_window=pred_window, target=target)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
                                                            generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
@@ -56,6 +63,12 @@ print(image[0].mean())
 print(label)
 print(label.shape)
 
+if pred_detector == 'all':
+    n_pred_detector = 27
+else:
+    n_pred_detector = 1
+out_size = 1 * n_pred_detector
+
 #seqlen_rec_list = [6]#,12, 24, 36, 72]  # 1
 #num_layers_rec_list = [2, 3, 4]  # 2
 #lin1_rec_active = [True]  # 3
@@ -68,8 +81,8 @@ for first_lin_size in first_lin_size_list:  # 4
     #plot_ind = num_layers_rec  # 2
     #plot_ind = 1  # 3
     plot_ind = first_lin_size  # 3
-    # %% Model
-    encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=n_outputs,
+    # Model
+    encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size,
                                    hidden_size=hidden_size_rec,
                                    num_layers=num_layers_rec, lin1_conv=lin1_conv, lin1_rec=lin1_rec,
                                    first_lin_size=first_lin_size).to(device)

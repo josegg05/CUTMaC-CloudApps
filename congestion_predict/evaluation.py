@@ -149,10 +149,10 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
                 loss_mae = criterion2(outputs_test, Y)
             loss_mse_list.append(loss_mse)
             loss_mae_list.append(loss_mae)
-            break
+            #break
     loss_mse = torch.cat(loss_mse_list, 0)
     loss_mae = torch.cat(loss_mae_list, 0)
-    return loss_mse, loss_mae
+    return loss_mse.cpu(), loss_mae.cpu()
 
 
 def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, res_folder='', device=None, seed=None, print_out=True):
@@ -196,26 +196,28 @@ def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, re
         print(filehandle.read())
 
 
-def plot_seq_out(target, label_conf, out_seq, model=None, model_path='', device=None, seed=None, folder=''):
+def plot_seq_out(target, pred_detector, out_seq, pred_window, model=None, model_path='', device=None, seed=None, folder=''):
     print('********************** Print a single sequence output **********************')
-    if label_conf == 'all':
+    if pred_detector == 'all':
         detectors_pred = 27
     else:
         detectors_pred = 1
-    hid_error_size = 6 * detectors_pred
-    out = 1 * detectors_pred
+    out_size = 1 * detectors_pred
+    hid_error_size = 6 * out_size
+
     if device is None:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
         # device = "cpu"
 
     if model is None:
-        e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq, dev=device)
+        e_rcnn = eRCNNSeq(3, hid_error_size, out_size, pred_window=pred_window, out_seq=out_seq, dev=device)
         e_rcnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
     else:
         e_rcnn = model
     count_parameters(e_rcnn)
     val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-    val_test_set = STImgSeqDataset(val_test_data_file_name, data_size=100000, label_conf=label_conf, target=target)
+    val_test_set = STImgSeqDataset(val_test_data_file_name, pred_detector=pred_detector,
+                           pred_window=pred_window, target=target, data_size=100000)
 
     e_rcnn.to(device)  # Put the network on GPU if present
     criterion = nn.MSELoss()  # L2 Norm
@@ -271,29 +273,31 @@ def plot_seq_out(target, label_conf, out_seq, model=None, model_path='', device=
     plt.show()
 
 
-def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=72, device=None, seed=None, folder='', shuffle=False):
+def plot_image(target, pred_detector, out_seq, pred_window, pred_type='solo', model=None, model_path='', img_size=72, device=None, seed=None, folder='', shuffle=False):
     print('********************** Print a predicted image **********************')
     if seed is not None:
         torch.manual_seed(seed=seed)
-    if label_conf == 'all':
+    if pred_detector == 'all':
         detectors_pred = 27
     else:
         detectors_pred = 1
-    hid_error_size = 6 * detectors_pred
-    out = 1 * detectors_pred
+    out_size = 1 * detectors_pred
+    hid_error_size = 6 * out_size
+
     if device is None:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
         # device = "cpu"
 
     if model is None:
-        e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq, dev=device)
+        e_rcnn = eRCNNSeq(3, hid_error_size, out_size, pred_window=pred_window, out_seq=out_seq, dev=device)
         e_rcnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
 
     else:
         e_rcnn = model
     count_parameters(e_rcnn)
     val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-    val_test_set = STImgSeqDataset(val_test_data_file_name, data_size=100000, label_conf=label_conf, target=target)
+    val_test_set = STImgSeqDataset(val_test_data_file_name, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target)
     if shuffle:
         val_test_set, test_set = torch.utils.data.random_split(val_test_set, [100000, 0])
 
@@ -391,28 +395,30 @@ def plot_image(target, label_conf, out_seq, model=None, model_path='', img_size=
     # plt.show()
 
 
-def print_loss_table(target, label_conf, out_seq, model=None, model_path='', batch_size=100, device=None, seed=None):
+def print_loss_table(target, pred_detector, out_seq, pred_window, pred_type='solo', model=None, model_path='', batch_size=100, device=None, seed=None):
     if seed is not None:
         torch.manual_seed(seed=seed)
-    if label_conf == 'all':
+    if pred_detector == 'all':
         detectors_pred = 27
     else:
         detectors_pred = 1
-    hid_error_size = 6 * detectors_pred
-    out = 1 * detectors_pred
+    out_size = 1 * detectors_pred
+    hid_error_size = 6 * out_size
+
     if device is None:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
         # device = "cpu"
 
     if model is None:
-        e_rcnn = eRCNNSeq(3, hid_error_size, out, out_seq=out_seq, dev=device)
+        e_rcnn = eRCNNSeq(3, hid_error_size, out_size, pred_window=pred_window, out_seq=out_seq, dev=device)
         e_rcnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
     else:
         e_rcnn = model
 
     count_parameters(e_rcnn)
     val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-    val_test_set = STImgSeqDataset(val_test_data_file_name, data_size=100000, label_conf=label_conf, target=target)
+    val_test_set = STImgSeqDataset(val_test_data_file_name, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target)
     val_test_loader = torch.utils.data.DataLoader(val_test_set, batch_size=batch_size, shuffle=True)
 
     e_rcnn.to(device)  # Put the network on GPU if present

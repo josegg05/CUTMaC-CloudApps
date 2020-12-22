@@ -10,14 +10,14 @@ import torch.optim as optim
 Model of a basic Network Composed by 2 Linear Layers
 '''
 class NN(nn.Module):
-    def __init__(self, in_sensors=3, height=27, width=72):
+    def __init__(self, in_sensors=3, height=27, width=72, out_size=1):
         super(NN, self).__init__()
 
         # Create blocks
         self.linear1 = nn.Linear(in_sensors * height * width, 2048)
         self.drop = nn.Dropout(p=0.6)
         self.linear2 = nn.Linear(2048, 1024)
-        self.linear_out = nn.Linear(1024, 1)
+        self.linear_out = nn.Linear(1024, out_size)
 
     def forward(self, x):
         # Output of one layer becomes input to the next
@@ -83,7 +83,7 @@ class ResidualBlock(nn.Module):
 
 
 class CNN(nn.Module):
-    def __init__(self, in_channels=3, height=27, width=72):
+    def __init__(self, in_channels=3, height=27, width=72, out_size=1):
         super(CNN, self).__init__()
 
         # Create blocks
@@ -93,7 +93,7 @@ class CNN(nn.Module):
         self.linear1 = nn.Linear(96 * height * width, 2048)
         self.drop = nn.Dropout(p=0.6)
         self.linear2 = nn.Linear(2048, 1024)
-        self.linear_out = nn.Linear(1024, 1)
+        self.linear_out = nn.Linear(1024, out_size)
 
     # A block is just two residual blocks for ResNet18
     def _create_block(self, in_channels, out_channels, stride):
@@ -126,11 +126,12 @@ passed through a linear layers to finally produce a prediction
 # efficient because the error have to be detached to allow the backpropagation. You can add some extra linear
 # layers, but it doesn't affect to much the results
 class eRCNN(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, dev='cpu'):
+    def __init__(self, input_size, hid_error_size, output_size, pred_window=4, dev='cpu'):
         super().__init__()
 
         self.hid_error_size = hid_error_size
         last_in = 256+32
+        self.pred_window = pred_window
         self.dev = dev
         self.conv = nn.Conv2d(
             in_channels=input_size,
@@ -145,6 +146,7 @@ class eRCNN(nn.Module):
     def forward(self, input, target):
         error = self.initError(input.shape[1])
         error = error.to(self.dev)
+        pred_list = []
         for seq in range(input.shape[0]):
             out_in = nn.ReLU()(self.conv(input[seq]))
             out_in = nn.AvgPool2d(2)(
@@ -155,8 +157,30 @@ class eRCNN(nn.Module):
             output = torch.cat((out_in, out_err), 1)
             output = self.lin_out(output)
 
-            err_seq = output - target[seq]
-            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # Error vector Implementation 0 (BAD!!!)
+            # err_seq = output - target[seq]
+            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            # Error vector Implementation 1
+            pred_list.append(output)
+            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
+                err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+                pred_list.pop(0)
+
+            # Error vector Implementation 2
+            # if self.training:
+            #     err_seq = output - target[seq]
+            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # else:
+            #     pred_list.append(output)
+            #     if seq >= self.pred_window - 1:  # Implementation 2
+            #         err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
+            #                            err_seq,
+            #                            error[:, err_seq.shape[-1] * 3:]),
+            #                           1)
+            #         pred_list.pop(0)
 
         return output
 
@@ -228,11 +252,15 @@ class eRCNN_fc_test(nn.Module):
 
 # Newest Version: Error initialization and recurrence inside the code. Model is more efficient.
 class eRCNNSeq(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, out_seq=1, dev="cpu"):
+    def __init__(self, input_size, hid_error_size, output_size, pred_window=None, out_seq=1, dev="cpu"):
         super().__init__()
 
         self.hid_error_size = hid_error_size
         self.out_seq = out_seq
+        if pred_window is None:
+            self.pred_window = out_seq
+        else:
+            self.pred_window = pred_window
         self.dev = dev
         last_in = 256+32
         self.conv = nn.Conv2d(
@@ -249,6 +277,7 @@ class eRCNNSeq(nn.Module):
         error = self.initError(input.shape[1])
         error = error.to(self.dev)
         out_list = []
+        pred_list = []
         for seq in range(input.shape[0]):
             out_in = nn.ReLU()(self.conv(input[seq]))
             out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
@@ -258,8 +287,30 @@ class eRCNNSeq(nn.Module):
             output = torch.cat((out_in, out_err), 1)
             output = self.lin_out(output)
 
-            err_seq = output - target[seq]
-            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # Error vector Implementation 0 (BAD!!!)
+            # err_seq = output - target[seq]
+            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            # Error vector Implementation 1
+            pred_list.append(output)
+            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
+                err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+                pred_list.pop(0)
+
+            # Error vector Implementation 2
+            # if self.training:
+            #     err_seq = output - target[seq]
+            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # else:
+            #     pred_list.append(output)
+            #     if seq >= self.pred_window - 1:  # Implementation 2
+            #         err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
+            #                            err_seq,
+            #                            error[:, err_seq.shape[-1] * 3:]),
+            #                           1)
+            #         pred_list.pop(0)
 
             if seq >= input.shape[0] - self.out_seq:
                 out_list.append(output)
@@ -281,10 +332,11 @@ class eRCNNSeq(nn.Module):
 
 
 class eRCNNSeqLin(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, fc_pre_outs=[], dev="cpu", ):
+    def __init__(self, input_size, hid_error_size, output_size, pred_window, fc_pre_outs=[], dev="cpu", ):
         super().__init__()
 
         self.hid_error_size = hid_error_size
+        self.pred_window = pred_window
         self.dev = dev
         self.n_fc = len(fc_pre_outs)
         last_in = 256+32
@@ -311,6 +363,7 @@ class eRCNNSeqLin(nn.Module):
     def forward(self, input, target):
         error = self.initError(input.shape[1])
         error = error.to(self.dev)
+        pred_list = []
         for seq in range(input.shape[0]):
             out_in = nn.ReLU()(self.conv(input[seq]))
             out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
@@ -326,8 +379,30 @@ class eRCNNSeqLin(nn.Module):
                 output = nn.ReLU()(self.lin3(output))
             output = self.lin_out(output)
 
-            err_seq = output - target[seq]
-            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # Error vector Implementation 0 (BAD!!!)
+            # err_seq = output - target[seq]
+            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            # Error vector Implementation 1
+            pred_list.append(output)
+            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
+                err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+                pred_list.pop(0)
+
+            # Error vector Implementation 2
+            # if self.training:
+            #     err_seq = output - target[seq]
+            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # else:
+            #     pred_list.append(output)
+            #     if seq >= self.pred_window - 1:  # Implementation 2
+            #         err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
+            #                            err_seq,
+            #                            error[:, err_seq.shape[-1] * 3:]),
+            #                           1)
+            #         pred_list.pop(0)
 
         return output
 
@@ -343,11 +418,15 @@ class eRCNNSeqLin(nn.Module):
 
 
 class eRCNNSeqIter(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, out_seq=1, dev="cpu"):
+    def __init__(self, input_size, hid_error_size, output_size, pred_window=None, out_seq=1, dev="cpu"):
         super().__init__()
 
         self.hid_error_size = hid_error_size
         self.out_seq = out_seq
+        if pred_window is None:
+            self.pred_window = out_seq
+        else:
+            self.pred_window = pred_window
         self.dev = dev
         last_in = 256+32
         self.conv = nn.Conv2d(
@@ -364,6 +443,7 @@ class eRCNNSeqIter(nn.Module):
     def forward(self, input, target):
         error = self.initError(input.shape[1])
         error = error.to(self.dev)
+        pred_list = []
         for seq in range(input.shape[0]):
             out_in = nn.ReLU()(self.conv(input[seq]))
             out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
@@ -373,8 +453,30 @@ class eRCNNSeqIter(nn.Module):
             output_pre = torch.cat((out_in, out_err), 1)
             output = self.lin_out(output_pre)
 
-            err_seq = output - target[seq]
-            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # Error vector Implementation 0 (BAD!!!)
+            # err_seq = output - target[seq]
+            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            # Error vector Implementation 1
+            pred_list.append(output)
+            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
+                err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+                pred_list.pop(0)
+
+            # Error vector Implementation 2
+            # if self.training:
+            #     err_seq = output - target[seq]
+            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # else:
+            #     pred_list.append(output)
+            #     if seq >= self.pred_window - 1:  # Implementation 2
+            #         err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
+            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
+            #                            err_seq,
+            #                            error[:, err_seq.shape[-1] * 3:]),
+            #                           1)
+            #         pred_list.pop(0)
 
         out_list = []
         out_list.append(output)
@@ -387,6 +489,31 @@ class eRCNNSeqIter(nn.Module):
 
             err_seq = output - target[seq + input.shape[0]]
             error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            # Error vector Implementation 0 (BAD!!!)
+            # err_seq = output - target[seq + input.shape[0]]
+            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
+            # Error vector Implementation 1
+            pred_list.append(output)
+            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
+                err_seq = pred_list[0] - target[seq + input.shape[0] - (self.pred_window - 1)]
+                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+                pred_list.pop(0)
+
+            # Error vector Implementation 2
+            # if self.training:
+            #     err_seq = output - target[seq + input.shape[0]]
+            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+            # else:
+            #     pred_list.append(output)
+            #     if seq >= self.pred_window - 1:  # Implementation 2
+            #         err_seq = pred_list[0] - target[seq + input.shape[0] - (self.pred_window - 1)]
+            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
+            #                            err_seq,
+            #                            error[:, err_seq.shape[-1] * 3:]),
+            #                           1)
+            #         pred_list.pop(0)
 
         output_final = torch.cat(out_list, 1)
         output_final = output_final.view(output_final.shape[0], self.out_seq, -1)

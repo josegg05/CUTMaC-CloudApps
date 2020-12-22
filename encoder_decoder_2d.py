@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from congestion_predict.data_sets import STImageDataset3
+from congestion_predict.data_sets import STImageDataset
 from congestion_predict.models import EncoderDecoder2D
 import numpy as np
 import pandas as pd
@@ -11,10 +11,12 @@ import congestion_predict.evaluation as eval_util
 import json
 
 
-target = 2
+pred_variable = 'speed'
+pred_detector = 'all'  # 'mid'; 'all'
+pred_type = 'solo'  # 'solo'; 'mean'
+pred_window = 4
 n_inputs_enc = 3  #nm
 n_inputs_dec = 3*27  #nm
-n_outputs = 27  #nm
 seqlen_rec = 12  # 12/24/36/72
 hidden_size_rec = 50  # 7/20/40/50/70 --> best 50
 num_layers_rec = 2   # 2/3/4
@@ -26,6 +28,9 @@ folder = 'resultados/EncoderDecoder/'
 result_folder = folder + 'Results/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
+variables_list = ['flow', 'occupancy', 'speed']
+target = variables_list.index(pred_variable)
+
 data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 data = pd.read_csv(data_file_name)
 data = data.to_numpy()
@@ -33,11 +38,13 @@ mean = np.mean(data, axis=0)[2:]
 stddev = np.std(data, axis=0)[2:]
 
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImageDataset3(train_data_file_name, mean, stddev, target=target)
+train_set = STImageDataset(train_data_file_name, mean=mean, stddev=mean, pred_detector=pred_detector,
+                            pred_type=pred_type, pred_window=pred_window, target=target)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-val_test_set = STImageDataset3(val_test_data_file_name, mean, stddev, target=target)
+val_test_set = STImageDataset(val_test_data_file_name, mean=mean, stddev=mean, pred_detector=pred_detector,
+                            pred_type=pred_type, pred_window=pred_window, target=target)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
                                                            generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
@@ -53,8 +60,14 @@ print(image[0].mean())
 print(label)
 print(label.shape)
 
-# %% Model
-encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=n_outputs, hidden_size=hidden_size_rec,
+#%% Create the model
+if pred_detector == 'all':
+    n_pred_detector = 27
+else:
+    n_pred_detector = 1
+out_size = 1 * n_pred_detector
+
+encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size, hidden_size=hidden_size_rec,
                                num_layers=num_layers_rec).to(device)
 
 encod_decod = encod_decod.float()

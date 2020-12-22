@@ -13,10 +13,13 @@ import json
 # Variables Initialization
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-label_conf = 'all'
-target = 2  # target: 0-Flow, 1-Occ, 2-Speed, 3-All
-out_seq = 4  # Size of the out sequence
+
+pred_variable = 'speed'
 pred_window = 4
+pred_detector = 'all'
+pred_type = 'solo'
+
+out_seq = pred_window  # Size of the out sequence
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
 epochs = 10
@@ -25,15 +28,22 @@ patience = 5
 result_folder = 'resultados/eRCNN/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
+variables_list = ['flow', 'occupancy', 'speed']
+target = variables_list.index(pred_variable)
 #%% Datasets Creation
-cali_dataset_2015 = pd.read_csv("datasets/california_paper_eRCNN/I5-N-3/2015.csv")
-print(cali_dataset_2015.head())
-print(cali_dataset_2015.describe())
+data = pd.read_csv(train_data_file_name)
+print(data.head())
+print(data.describe())
+data = data.to_numpy()
+mean = np.mean(data, axis=0)[2:]
+stddev = np.std(data, axis=0)[2:]
 
-train_set = STImgSeqDataset(train_data_file_name, label_conf=label_conf, pred_window=pred_window, target=target)
+train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
-val_test_set = STImgSeqDataset(val_test_data_file_name, label_conf=label_conf, pred_window=pred_window, target=target)
+val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
                                                            generator=torch.Generator().manual_seed(5))
 
@@ -51,14 +61,14 @@ print(label.shape)
 # print(label)
 
 #%% Create the model
-if label_conf == 'all':
+if pred_detector == 'all':
     detectors_pred = 27
 else:
     detectors_pred = 1
-hid_error_size = 6 * detectors_pred
-out = 1 * detectors_pred
+out_size = 1 * detectors_pred
+hid_error_size = 6 * out_size
 
-e_rcnn = eRCNNSeq(image_seq.shape[1], hid_error_size, out, out_seq=out_seq, dev=device)
+e_rcnn = eRCNNSeq(image_seq.shape[1], hid_error_size, out_size, pred_window=pred_window, out_seq=out_seq, dev=device)
 count_parameters(e_rcnn)
 
 #%% Training

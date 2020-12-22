@@ -7,10 +7,17 @@ import numpy as np
 import pandas as pd
 from congestion_predict.utilities import count_parameters
 
+pred_variable = 'speed'
+pred_detector = 'all'
+pred_type = 'solo'
+pred_window = 4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 folder = 'resultados/EncoderDecoder/'
 folder_results = folder + 'Results/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
+
+variables_list = ['flow', 'occupancy', 'speed']
+target = variables_list.index(pred_variable)
 
 data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 data = pd.read_csv(data_file_name)
@@ -19,10 +26,12 @@ mean = np.mean(data, axis=0)[2:]
 stddev = np.std(data, axis=0)[2:]
 
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STEncDecSeqDataset(train_data_file_name, mean, stddev)
+train_set = STEncDecSeqDataset(train_data_file_name, mean=mean, stddev=mean, pred_detector=pred_detector,
+                            pred_type=pred_type, pred_window=pred_window, target=target)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set)-100000], generator=torch.Generator().manual_seed(5))
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-val_test_set = STEncDecSeqDataset(val_test_data_file_name, mean, stddev)
+val_test_set = STEncDecSeqDataset(val_test_data_file_name, mean=mean, stddev=mean, pred_detector=pred_detector,
+                            pred_type=pred_type, pred_window=pred_window, target=target)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set)-100000], generator=torch.Generator().manual_seed(5))
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
@@ -39,14 +48,18 @@ print(label.shape)
 
 
 #%% Model
+if pred_detector == 'all':
+    n_pred_detector = 27
+else:
+    n_pred_detector = 1
+out_size = 1 * n_pred_detector
 n_inputs = 27*3
-n_outputs = 27
 seqlen_conv = 72
 seqlen_rec = 12
 hidden_size_rec = 50
 num_layers_rec = 2
 
-encod_decod = EncoderDecoder(n_inputs=n_inputs, n_outputs=n_outputs, seqlen_conv=seqlen_conv, hidden_size=hidden_size_rec,
+encod_decod = EncoderDecoder(n_inputs=n_inputs, n_outputs=out_size, seqlen_conv=seqlen_conv, hidden_size=hidden_size_rec,
                             num_layers=num_layers_rec).to(device)
 
 encod_decod = encod_decod.float()
@@ -74,7 +87,6 @@ for epoch in range(epochs):
     its = 0
     loss_acc = 0
     for batch_idx, (input, targets) in enumerate(train_loader):
-        #targets = targets[:, 2]
         targets = torch.unsqueeze(targets, 1)
         X_c, X_r, Y = input.to(device), input[:, -seqlen_rec:, :].to(device), targets.to(device)
 
