@@ -15,10 +15,10 @@ import json
 train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
 
-extra_fc = [256]  # The best
+extra_fc = []  # The best
 
 pred_variable = 'speed'
-pred_window = 4
+pred_window = 3
 pred_detector = 'all_lin'
 pred_type = 'solo'
 

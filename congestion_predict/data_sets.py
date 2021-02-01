@@ -499,14 +499,14 @@ class STEncDecSeqDataset(torch.utils.data.Dataset):
         elif self.pred_type == 'mean':
             label_list = []
             if self.pred_detector == 'mid':
-                for wind in range(self.pred_window - 1):
+                for wind in range(self.pred_window):
                     label = self.data[
                             ((idx + self.image_size + wind) * self.detect_num) + int(self.detect_num / 2),
                             2 + self.target:(2 + self.target)+1]
                     label_list.append(label)
                 label = np.array([np.mean(label_list)])
             elif self.pred_detector == 'all':
-                for wind in range(self.pred_window - 1):
+                for wind in range(self.pred_window):
                     label = self.data[
                             ((idx + self.image_size + wind) * self.detect_num):
                             ((idx + self.image_size + wind + 1) * self.detect_num),

@@ -447,3 +447,13 @@ with open('dog_breeds.txt', 'w') as reader:
 with open('dog_breeds.txt', 'r') as reader:
     # Read & print the entire file
     print(reader.read())
+
+
+import torch
+caca = torch.tensor([[1,3], [3,5]])
+coco = torch.zeros(caca.shape)
+print(caca)
+print(coco)
+
+import random
+print(random.choices([True, False], weights=[0.5, 1], k=1))

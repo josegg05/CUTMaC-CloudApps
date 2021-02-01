@@ -15,7 +15,7 @@ train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
 val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
 
 pred_variable = 'speed'
-pred_window = 8
+pred_window = 3
 pred_detector = 'all_iter'
 pred_type = 'solo'
 
@@ -25,7 +25,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check
 epochs = 10
 batch_size = 50  # Training Batch size
 patience = 5
-result_folder = 'resultados/eRCNN/eRCNNSeqIter/seq_8'
+result_folder = 'resultados/eRCNN/eRCNNSeqIter/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
 variables_list = ['flow', 'occupancy', 'speed']
@@ -91,6 +91,8 @@ min_loss = 100000
 loss_plot_train = []
 mse_plot_valid = []
 mae_plot_valid = []
+weight = 0
+weight_add = ((100 / epochs) / (len(train_set) / batch_size)) * 100
 for epoch in range(epochs):  # 10 epochs
     print(f"******************Epoch {epoch}*******************\n\n")
     torch.autograd.set_detect_anomaly(True)
@@ -107,7 +109,7 @@ for epoch in range(epochs):  # 10 epochs
         optimizer.zero_grad()  # Zero the gradients
         loss = torch.zeros(1, requires_grad=True)
 
-        outputs = e_rcnn(inputs, targets)
+        outputs = e_rcnn(inputs, targets, weight)
         loss = criterion(outputs, targets[-out_seq:].permute(1, 0, 2))
         #print(loss)
         loss.backward()
@@ -122,6 +124,7 @@ for epoch in range(epochs):  # 10 epochs
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses_train), end - start))
             loss_plot_train.append(losses_train)
             losses_train = []
+            weight += weight_add
             start = time.time()
     scheduler.step()
     torch.save(e_rcnn.state_dict(), f"resultados/eRCNN/eRCNN_state_dict_model_{target}.pt")

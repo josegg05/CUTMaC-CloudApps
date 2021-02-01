@@ -18,13 +18,14 @@ pred_variable = 'speed'
 pred_window = 3
 pred_detector = 'mid'
 pred_type = 'mean'
+error_type = 0
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
 epochs = 10
 batch_size = 50  # Training Batch size
 patience = 5
-result_folder = 'resultados/eRCNN/'
+result_folder = 'resultados/eRCNN/eRCNN/'
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
 variables_list = ['flow', 'occupancy', 'speed']

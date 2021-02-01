@@ -1,3 +1,5 @@
+import random
+
 import pandas as pd
 import numpy as np
 import torch
@@ -440,11 +442,16 @@ class eRCNNSeqIter(nn.Module):
         self.lin_h = nn.Linear(last_in, 256)
         self.lin_out = nn.Linear(last_in, output_size)
 
-    def forward(self, input, target):
+    def forward(self, input, target, weight=100):
         error = self.initError(input.shape[1])
         error = error.to(self.dev)
-        pred_list = []
+
         for seq in range(input.shape[0]):
+            # Error vector Implementation 0 (Good - predictions is the next timestep)
+            if seq != 0:  # not the first
+                err_seq = output - target[seq - 1]
+                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
             out_in = nn.ReLU()(self.conv(input[seq]))
             out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
             out_in = out_in.view(-1, self.num_flat_features(out_in))
@@ -453,67 +460,24 @@ class eRCNNSeqIter(nn.Module):
             output_pre = torch.cat((out_in, out_err), 1)
             output = self.lin_out(output_pre)
 
-            # Error vector Implementation 0 (BAD!!!)
-            # err_seq = output - target[seq]
-            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-
-            # Error vector Implementation 1
-            pred_list.append(output)
-            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
-                err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
-                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-                pred_list.pop(0)
-
-            # Error vector Implementation 2
-            # if self.training:
-            #     err_seq = output - target[seq]
-            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-            # else:
-            #     pred_list.append(output)
-            #     if seq >= self.pred_window - 1:  # Implementation 2
-            #         err_seq = pred_list[0] - target[seq - (self.pred_window - 1)]
-            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
-            #                            err_seq,
-            #                            error[:, err_seq.shape[-1] * 3:]),
-            #                           1)
-            #         pred_list.pop(0)
-
         out_list = []
         out_list.append(output)
         for seq in range(self.out_seq-1):
+            if (not self.training) or (random.choices([True, False], weights=[weight, 100 - weight], k=1)[0]):
+                # err_seq = torch.zeros(output.shape)
+                # err_seq = err_seq.to(self.dev)
+                err_seq = torch.mean(error.view(error.shape[0], 6, -1), 1)  # the "6" must come from outside
+                print(err_seq.shape)
+                print(error.shape)
+            else:
+                err_seq = output - target[seq - 1 + input.shape[0]]
+            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
+
             out_h = self.lin_h(output_pre)
             out_err = nn.ReLU()(self.lin_error(error))
             output_pre = torch.cat((out_h, out_err), 1)
             output = self.lin_out(output_pre)
             out_list.append(output)
-
-            err_seq = output - target[seq + input.shape[0]]
-            error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-
-            # Error vector Implementation 0 (BAD!!!)
-            # err_seq = output - target[seq + input.shape[0]]
-            # error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-
-            # Error vector Implementation 1
-            pred_list.append(output)
-            if seq >= self.pred_window - 1:  # Hay que restarle uno porque lo estamos calculando un timestep antes de utilizarlo
-                err_seq = pred_list[0] - target[seq + input.shape[0] - (self.pred_window - 1)]
-                error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-                pred_list.pop(0)
-
-            # Error vector Implementation 2
-            # if self.training:
-            #     err_seq = output - target[seq + input.shape[0]]
-            #     error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
-            # else:
-            #     pred_list.append(output)
-            #     if seq >= self.pred_window - 1:  # Implementation 2
-            #         err_seq = pred_list[0] - target[seq + input.shape[0] - (self.pred_window - 1)]
-            #         error = torch.cat((error[:, err_seq.shape[-1]:err_seq.shape[-1] * 3],
-            #                            err_seq,
-            #                            error[:, err_seq.shape[-1] * 3:]),
-            #                           1)
-            #         pred_list.pop(0)
 
         output_final = torch.cat(out_list, 1)
         output_final = output_final.view(output_final.shape[0], self.out_seq, -1)
