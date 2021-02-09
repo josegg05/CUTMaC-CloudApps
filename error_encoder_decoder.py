@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from congestion_predict.data_sets import STImageDataset
-from congestion_predict.models import EncoderDecoder2D
+from congestion_predict.data_sets import STImgSeqDataset
+from congestion_predict.models import ErrorEncoderDecoder2D
 import numpy as np
 import pandas as pd
 import time
@@ -11,14 +11,19 @@ import congestion_predict.evaluation as eval_util
 import json
 
 
+# Variables Initialization
+train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
+val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+
 pred_variable = 'speed'
-pred_detector = 'all'  # 'mid'; 'all'
-pred_type = 'solo'  # 'solo'; 'mean'
-pred_window = 4
+pred_window = 3
+pred_detector = 'all_iter'
+pred_type = 'solo'
+out_seq = pred_window  # Size of the out sequence
 n_inputs_enc = 3  #nm
-n_inputs_dec = 3*27  #nm
-seqlen_rec = 12  # 12/24/36/72
-hidden_size_rec = 50  # 7/20/40/50/70 --> best 50
+n_inputs_dec = 27  #nm
+seqlen_rec = 6  # 8/12
+hidden_size_rec = 40  # 7/20/40/50/70 --> best 50
 num_layers_rec = 2   # 2/3/4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 epochs = 10000
@@ -37,16 +42,15 @@ data = data.to_numpy()
 mean = np.mean(data, axis=0)[2:]
 stddev = np.std(data, axis=0)[2:]
 
-train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-train_set = STImageDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
-                            pred_type=pred_type, pred_window=pred_window, target=target)
+train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target)
 train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
-val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-val_test_set = STImageDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
-                            pred_type=pred_type, pred_window=pred_window, target=target)
+val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target)
 valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
                                                            generator=torch.Generator().manual_seed(5))
+
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
 print(f"Size of test_set = {len(test_set)}")
@@ -61,14 +65,16 @@ print(label)
 print(label.shape)
 
 #%% Create the model
-if pred_detector == 'all':
-    n_pred_detector = 27
+if 'all' in pred_detector:
+    detectors_pred = 27
 else:
-    n_pred_detector = 1
-out_size = 1 * n_pred_detector
+    detectors_pred = 1
+out_size = 1 * detectors_pred
 
-encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size, hidden_size=hidden_size_rec,
-                               num_layers=num_layers_rec).to(device)
+encod_decod = ErrorEncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size,
+                                    hidden_size=hidden_size_rec, num_layers=num_layers_rec, out_seq=out_seq,
+                                    error_size=seqlen_rec,).to(device)
+
 
 encod_decod = encod_decod.float()
 count_parameters(encod_decod)
@@ -87,22 +93,26 @@ mse_plot_valid = []
 mae_plot_valid = []
 for epoch in range(epochs):
     print(f"******************Epoch {epoch}*******************\n\n")
-    # training step
     encod_decod.train()
     losses_train = []
+
+    # Train
     start = time.time()
-    for batch_idx, (input, targets) in enumerate(train_loader):
-        targets = torch.unsqueeze(targets, 1)
-        X_r_pre = input.transpose(1, 3)
-        X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
-        X_c, X_r, Y = input.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets.to(device)
-        print(X_c.shape)
-        print(X_r.shape)
+    for batch_idx, (inputs, targets) in enumerate(train_loader):
+        inputs = inputs.permute(1, 0, 2, 3, 4)
+        targets = targets.permute(1, 0, 2)
+
+        inputs, targets = inputs.to(device), targets.to(device)
+
+        #print(inputs.shape)
+        #print(targets.shape)
 
         optimizer.zero_grad()
-        Y_pred = encod_decod(X_c.float(), X_r.float())
+        loss = torch.zeros(1, requires_grad=True)
+
+        Y_pred = encod_decod(inputs.float(), targets.float())
         # print(Y_pred.shape, Y.shape)
-        loss = criterion(Y_pred, Y)
+        loss = criterion(Y_pred, targets[-out_seq:].permute(1, 0, 2))
         loss.backward()
         optimizer.step()
         losses_train.append(loss.item())
@@ -120,16 +130,15 @@ for epoch in range(epochs):
     mse_valid = []
     mae_valid = []
     with torch.no_grad():
-        for batch_idx, (input, targets) in enumerate(valid_loader):
-            targets = torch.unsqueeze(targets, 1)
-            X_r_pre = input.transpose(1, 3)
-            X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
-            X_c, X_r, Y = input.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets.to(device)
+        for batch_idx, (inputs_valid, targets_valid) in enumerate(valid_loader):
+            inputs_valid = inputs_valid.permute(1, 0, 2, 3, 4)
+            targets_valid = targets_valid.permute(1, 0, 2)
+            inputs_valid, targets_valid = inputs_valid.to(device), targets_valid.to(device)
 
-            Y_pred = encod_decod(X_c.float(), X_r.float())
+            Y_pred_valid = encod_decod(inputs_valid.float(), targets_valid.float())
 
-            loss_mse = criterion(Y_pred, Y)
-            loss_mae = criterion2(Y_pred, Y)
+            loss_mse = criterion(Y_pred_valid, targets_valid[-out_seq:].permute(1, 0, 2))
+            loss_mae = criterion2(Y_pred_valid, targets_valid[-out_seq:].permute(1, 0, 2))
             mse_valid.append(loss_mse.item())
             mae_valid.append(loss_mae.item())
             if (batch_idx + 1) % 100 == 0:
@@ -175,15 +184,14 @@ mse_test = []
 mae_test = []
 with torch.no_grad():
     for batch_idx, (inputs_test, targets_test) in enumerate(test_loader):
-        targets_test = torch.unsqueeze(targets_test, 1)
-        X_r_pre = inputs_test.transpose(1, 3)
-        X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
-        X_c, X_r, Y = inputs_test.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets_test.to(device)
+        inputs_test = inputs_test.permute(1, 0, 2, 3, 4)
+        targets_test = targets_test.permute(1, 0, 2)
+        inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
-        Y_pred = encod_decod(X_c.float(), X_r.float())
+        Y_pred_test = encod_decod(inputs_test.float(), targets_test.float())
 
-        loss_mse = criterion(Y_pred, Y)
-        loss_mae = criterion2(Y_pred, Y)
+        loss_mse = criterion(Y_pred_test, targets_test[-out_seq:].permute(1, 0, 2))
+        loss_mae = criterion2(Y_pred_test, targets_test[-out_seq:].permute(1, 0, 2))
         mse_test.append(loss_mse.item())
         mae_test.append(loss_mae.item())
         if (batch_idx + 1) % 100 == 0:

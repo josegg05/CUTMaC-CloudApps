@@ -749,6 +749,52 @@ class DecoderRecL(nn.Module):
         return y
 
 
+class ErrorDecoderRec(nn.Module):
+    def __init__(self, n_inputs, n_outputs, hidden_size_in, num_layers, out_seq=3, error_size=6, linear_emb=False):
+        super(ErrorDecoderRec, self).__init__()
+
+        self.out_seq = out_seq
+        self.error_size = error_size
+        self.detectors_pred = n_outputs
+        self.linear_emb = linear_emb
+        self.gru = nn.GRU(input_size=n_inputs, hidden_size=hidden_size_in, num_layers=num_layers, batch_first=True,
+                          bidirectional=False, dropout=0.2)
+        self.linear1 = nn.Linear(in_features=num_layers, out_features=out_seq)
+        self.linear2 = nn.Linear(in_features=hidden_size_in, out_features=n_outputs)
+
+    def forward(self, e, h, t):
+        '''
+
+        :param x: shape = (batch_size, seqlen, n_inputs)
+        :param h: shape = (num_layers_rec_dec, batch_size, hidden_size_rec_dec)
+        :return: y: shape = (batch_size, 1, n_outputs)
+        '''
+
+        e_seq =torch.cat((e, torch.zeros(e.shape[0], self.out_seq-1, self.detectors_pred)), 1)
+        y, h = self.gru(e_seq, h)  # y.shape --> (batch_size, seq_len, hidden_size)
+
+        if(self.linear_emb):
+            y = self.linear1(y.transpose(0, 1).transpose(1, 2))
+            y = y.transpose(1, 2)
+        else:
+            size = y.shape
+            y = y[:, -self.out_seq:, :].view(size[0], self.out_seq, size[2])
+        # y.shape --> (batch_size, out_seq, hidden_size)
+        y = self.linear2(y)
+
+        #print(t.shape)
+        #print(y[:, -1, :].shape)
+        e_last = t - y[:, -1, :]
+        e = torch.cat((e[:, 1:, :], torch.unsqueeze(e_last, 1)), 1)
+        #print(e.shape)
+        return y, e
+
+
+    def error_init(self, batch_size):
+        return torch.zeros(batch_size, self.error_size, self.detectors_pred)
+        return error
+
+
 class EncoderDecoder(nn.Module):
     '''
     Encoder conv
@@ -796,4 +842,32 @@ class EncoderDecoder2D(nn.Module):
         h = self.encoder_c(x_c).contiguous()
         # print(x_c.shape, x_r.shape)
         y = self.decoder_r(x_r, h)
+        return y
+
+
+class ErrorEncoderDecoder2D(nn.Module):
+    '''
+    Encoder conv
+    Decoder rec
+    '''
+
+    def __init__(self, n_inputs_enc, n_inputs_dec, n_outputs, hidden_size, num_layers,
+                 out_seq=3, error_size=6, lin1_conv=False, lin1_rec=False, first_lin_size=256):
+        super(ErrorEncoderDecoder2D, self).__init__()
+        if lin1_conv:
+            self.encoder_c = EncoderConv2DL(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers,
+                                            first_lin_size=first_lin_size)
+        else:
+            self.encoder_c = EncoderConv2D(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers)
+
+        self.decoder_r = ErrorDecoderRec(n_inputs=n_inputs_dec, n_outputs=n_outputs, hidden_size_in=hidden_size,
+                                         num_layers=num_layers, out_seq=out_seq, error_size=error_size,
+                                         linear_emb=lin1_rec)
+
+    def forward(self, x_c, target):
+        error = self.decoder_r.error_init(x_c.shape[1])
+        for idx in range(len(x_c)):
+            h = self.encoder_c(x_c[idx]).contiguous()
+            # print(x_c.shape, x_r.shape)
+            y, error = self.decoder_r(error, h, target[idx])
         return y
