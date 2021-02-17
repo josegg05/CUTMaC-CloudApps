@@ -73,7 +73,7 @@ out_size = 1 * detectors_pred
 
 encod_decod = ErrorEncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size,
                                     hidden_size=hidden_size_rec, num_layers=num_layers_rec, out_seq=out_seq,
-                                    error_size=seqlen_rec,).to(device)
+                                    error_size=seqlen_rec, dev=device)
 
 
 encod_decod = encod_decod.float()
@@ -82,6 +82,8 @@ count_parameters(encod_decod)
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
+
+encod_decod.to(device)
 
 criterion = nn.MSELoss()  # L2 Norm
 criterion2 = nn.L1Loss()

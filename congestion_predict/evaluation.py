@@ -147,6 +147,18 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
 
                 loss_mse = criterion(outputs_test, Y)
                 loss_mae = criterion2(outputs_test, Y)
+
+            elif model_type == 'eREncDecSeq':
+                inputs_test = inputs_test.transpose(0, 1)
+                targets_test = targets_test.transpose(0, 1)
+                inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
+
+                outputs_test = model(inputs_test, targets_test)
+
+                out_seq = outputs_test.shape[1]
+                loss_mse = criterion(outputs_test, targets_test[-out_seq:].transpose(0, 1))
+                loss_mae = criterion2(outputs_test, targets_test[-out_seq:].transpose(0, 1))
+
             loss_mse_list.append(loss_mse)
             loss_mae_list.append(loss_mae)
             #break
@@ -155,9 +167,9 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
     return loss_mse.cpu(), loss_mae.cpu()
 
 
-def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, res_folder='', device=None, seed=None, print_out=True):
+def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, res_folder='', file_sfx='', device=None, seed=None, print_out=True):
     original_stdout = sys.stdout  # Save a reference to the original standard output
-    with open(res_folder + f'loss_evaluation_{model_type}.txt', 'w') as filehandle:
+    with open(res_folder + f'loss_evaluation_{model_type}{file_sfx}.txt', 'w') as filehandle:
         sys.stdout = filehandle  # Change the standard output to the file we created.
         if seed is not None:
             torch.manual_seed(seed=seed)

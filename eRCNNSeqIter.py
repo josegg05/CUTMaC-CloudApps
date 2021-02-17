@@ -22,7 +22,7 @@ pred_type = 'solo'
 out_seq = pred_window  # Size of the out sequence
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
-epochs = 10
+epochs = 1000
 batch_size = 50  # Training Batch size
 patience = 5
 result_folder = 'resultados/eRCNN/eRCNNSeqIter/'
@@ -40,16 +40,18 @@ stddev = np.std(data, axis=0)[2:]
 
 train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
                            pred_type=pred_type, pred_window=pred_window, target=target)
-train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
+train_set, extra1 = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
                                                  generator=torch.Generator().manual_seed(5))
 val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
                            pred_type=pred_type, pred_window=pred_window, target=target)
-valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
+valid_set, test_set, extra2 = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
                                                            generator=torch.Generator().manual_seed(5))
 
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
 print(f"Size of test_set = {len(test_set)}")
+print(f"Size of extra train = {len(extra1)}")
+print(f"Size of extra test = {len(extra2)}")
 
 #%% View a data sample
 image_seq, label = valid_set[0]

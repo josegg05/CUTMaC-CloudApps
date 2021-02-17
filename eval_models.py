@@ -1,6 +1,6 @@
 import torch
 from congestion_predict.data_sets import STImgSeqDataset
-from congestion_predict.models import eRCNNSeq, eRCNNSeqLin, eRCNNSeqIter, eRCNN
+from congestion_predict.models import eRCNNSeq, eRCNNSeqLin, eRCNNSeqIter, eRCNN, ErrorEncoderDecoder2D
 import congestion_predict.evaluation as eval_util
 
 
@@ -193,6 +193,52 @@ e_rcnn.load_state_dict(torch.load(result_folder + model_name, map_location=torch
 
 eval_util.loss_evaluation(test_set,
                           e_rcnn,
+                          model_type,
+                          batch_size=batch_size,
+                          res_folder=result_folder,
+                          device=device,
+                          seed=seed)
+
+# %% eREncDecSeq
+pred_variable = 'speed'
+pred_window = 3
+pred_detector = 'all_iter'
+pred_type = 'solo'
+
+out_seq = pred_window  # Size of the out sequence
+n_inputs_enc = 3  #nm
+n_inputs_dec = 27  #nm
+seqlen_rec = 6  # 8/12
+hidden_size_rec = 40  # 7/20/40/50/70 --> best 50
+num_layers_rec = 2   # 2/3/4
+
+img_size = 20
+
+variables_list = ['flow', 'occupancy', 'speed']
+target = variables_list.index(pred_variable)
+
+result_folder = 'resultados/EncoderDecoder/eREncDecSeq/'
+model_name = f'best_observer.pt'
+
+test_set = STImgSeqDataset(test_data_file_name, pred_detector=pred_detector,
+                           pred_type=pred_type, pred_window=pred_window, target=target, data_size=100000)
+test_set, _, _ = torch.utils.data.random_split(test_set, [50000, 50000, len(test_set) - 100000],
+                                                           generator=torch.Generator().manual_seed(seed))
+
+if 'all' in pred_detector:
+    detectors_pred = 27
+else:
+    detectors_pred = 1
+out_size = 1 * detectors_pred
+
+model_type = 'eREncDecSeq'
+encod_decod = ErrorEncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size,
+                               hidden_size=hidden_size_rec, num_layers=num_layers_rec, out_seq=out_seq,
+                               error_size=seqlen_rec, dev=device)
+encod_decod.load_state_dict(torch.load(result_folder + model_name, map_location=torch.device(device)))
+
+eval_util.loss_evaluation(test_set,
+                          encod_decod,
                           model_type,
                           batch_size=batch_size,
                           res_folder=result_folder,

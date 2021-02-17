@@ -315,6 +315,107 @@ class STImgSeqDataset(torch.utils.data.Dataset):
         return image_seq, labels_seq
 
 
+class STImgSeqDatasetDayTests(torch.utils.data.Dataset):  # Days divided in 4 periods of 6 hours
+    def __init__(self,
+                 data_file_name, mean=None, stddev=None, pred_detector='all', pred_type='solo', pred_window=4, target=2,
+                 seq_size=72, image_size=72, data_size=0, day_period=0, transforms=None):
+        self.data = pd.read_csv(data_file_name)
+        self.data = self.data.to_numpy()
+        self.detect_num = int(np.max(self.data[:, 1]) + 1)
+        if mean is not None:
+            self.mean = mean
+        else:
+            self.mean = np.mean(self.data, axis=0)[2:]
+        if stddev is not None:
+            self.stddev = stddev
+        else:
+            self.stddev = np.std(self.data, axis=0)[2:]
+
+        if data_size == 0:
+            data_size = int((len(np.unique(self.data[:, 0])) - (image_size - 1) - (seq_size - 1) - pred_window)/4)
+            # print(len(np.unique(self.data[:,0])))
+        else:
+            self.data = self.data[:(data_size + (image_size - 1) + (seq_size - 1) + pred_window) * self.detect_num]
+
+        self.var_num = self.data.shape[1] - 2
+        self.seq_size = seq_size
+        self.image_size = image_size
+        self.data_size = data_size
+        self.pred_window = pred_window
+        self.transforms = transforms
+        self.pred_detector = pred_detector
+        self.pred_type = pred_type
+        self.day_period = day_period
+        self.target = target
+
+    def __len__(self):
+        return self.data_size
+
+    def __getitem__(self, idx):
+        image_seq = []
+        labels_seq = []
+        offset_multi = idx // 72  # --> (24 h/d * 60 m/h / 5 m/step) = 288 step/d / 4 p/d) = 72 step/p; p = period
+        offset_sum = idx % 72
+        idx = (offset_multi*288) + offset_sum + (72*self.day_period)
+        for sq in range(self.seq_size):
+            image = self.data[(idx + sq) * self.detect_num:(idx + sq + self.image_size) * self.detect_num, 2:]
+            image = torch.from_numpy(image.astype(np.float32))
+            image = torch.reshape(image, (self.image_size, self.detect_num, -1))
+            image = (image - self.mean) / self.stddev
+            image = image.permute(2, 1, 0)
+            # image = (image-image.mean())/image.std()
+            image.unsqueeze_(0)
+
+            if self.pred_detector == 'all':  # target.shape --> (seq_size, detect_num)
+                label = self.data[
+                        ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num):
+                        ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
+                        2 + self.target]
+                label = torch.from_numpy(label.astype(np.float32))
+            elif self.pred_detector == 'all_lin':  # target.shape --> (seq_size, detect_num*pred_window)
+                label = self.data[
+                        ((idx + sq + self.image_size) * self.detect_num):
+                        ((idx + sq + self.image_size + self.pred_window) * self.detect_num),
+                        2 + self.target]
+                label = torch.from_numpy(label.astype(np.float32))
+            elif self.pred_detector == 'all_iter':  # target.shape --> (seq_size + pred_window, detect_num)
+                if sq != range(self.seq_size)[-1]:  # not the last sq
+                    label = self.data[
+                            ((idx + sq + self.image_size) * self.detect_num):
+                            ((idx + sq + self.image_size + 1) * self.detect_num),
+                            2 + self.target]
+                    label = torch.from_numpy(label.astype(np.float32))
+                else:
+                    for wind in range(self.pred_window):
+                        label = self.data[
+                                ((idx + sq + self.image_size + wind) * self.detect_num):
+                                ((idx + sq + self.image_size + wind + 1) * self.detect_num),
+                                2 + self.target]
+                        label = torch.from_numpy(label.astype(np.float32))
+                        if wind != range(self.pred_window)[-1]:  # not last window
+                            label.unsqueeze_(0)
+                            labels_seq.append(label)
+            else:  # target.shape --> (seq_size, 1)
+                label = self.data[
+                    ((idx + sq + self.image_size + (self.pred_window - 1)) * self.detect_num) + int(self.pred_detector),
+                    2 + self.target]
+                label = np.array(label)
+                label = torch.from_numpy(label.astype(np.float32))
+                label.unsqueeze_(-1)
+
+            # print(f'The label shape is:{label.shape}')
+            label.unsqueeze_(0)
+            image_seq.append(image)
+            labels_seq.append(label)
+        image_seq = torch.cat(image_seq,
+                              out=torch.Tensor(self.seq_size, self.var_num, self.detect_num, self.image_size))
+        labels_seq = torch.cat(labels_seq)
+        if self.transforms:
+            image_seq = self.transforms(image_seq)
+
+        return image_seq, labels_seq
+
+
 class STImgSeqDataset_old(torch.utils.data.Dataset):
     def __init__(self, data_file_name, pred_detector='mid', target=3, seq_size=72, image_size=72, data_size=0,
                  pred_window=4,
