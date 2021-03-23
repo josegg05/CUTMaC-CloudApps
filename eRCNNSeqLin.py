@@ -62,9 +62,9 @@ if dataset == 'cali_i5':
     mean_torch = torch.Tensor([mean[target]]).to(device)
 
 elif dataset == 'metr_la':
-    train_data_file_name = 'datasets/METR-LA/train_filtered.npz'
-    valid_data_file_name = 'datasets/METR-LA/val_filtered.npz'
-    test_data_file_name = 'datasets/METR-LA/test_filtered.npz'
+    train_data_file_name = 'datasets/METR-LA/train_filtered_we.npz.npz'
+    valid_data_file_name = 'datasets/METR-LA/val_filtered_we.npz'
+    test_data_file_name = 'datasets/METR-LA/test_filtered_we.npz'
     train_data_temp = np.load(train_data_file_name)
     train_data = {'x': train_data_temp['x'], 'y': train_data_temp['y']}
     mean = train_data['x'][..., 0].mean()
@@ -236,11 +236,11 @@ with torch.no_grad():
 
         outputs_test = e_rcnn(inputs_test, targets_test)
         if (target_norm):
-            loss_mse = criterion(outputs_test * stddev_torch + mean_torch, targets_valid[-1] * stddev_torch + mean_torch)
-            loss_mae = criterion2(outputs_test * stddev_torch + mean_torch, targets_valid[-1] * stddev_torch + mean_torch)
+            loss_mse = criterion(outputs_test * stddev_torch + mean_torch, targets_test[-1] * stddev_torch + mean_torch)
+            loss_mae = criterion2(outputs_test * stddev_torch + mean_torch, targets_test[-1] * stddev_torch + mean_torch)
         else:
-            loss_mse = criterion(outputs_test, targets_valid[-1])
-            loss_mae = criterion2(outputs_test, targets_valid[-1])
+            loss_mse = criterion(outputs_test, targets_test[-1])
+            loss_mae = criterion2(outputs_test, targets_test[-1])
 
         mse_test.append(loss_mse.item())
         mae_test.append(loss_mae.item())

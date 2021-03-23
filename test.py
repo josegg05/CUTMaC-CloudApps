@@ -477,6 +477,10 @@ time_series.distribution(
 )
 
 
-##% indexisng np array with another np array
+#%% indexisng np array with another np array
+import numpy as np
 caca = np.arange(1,50,1)
 print(caca[2 + np.array([0,1,2,4,5]), ...])
+coco = caca[np.array([20,10,2,7,5]), ...]
+print(coco)
+print(coco[0])

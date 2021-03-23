@@ -61,9 +61,9 @@ if dataset == 'cali_i5':
     mean_torch = torch.Tensor([mean[target]]).to(device)
 
 elif dataset == 'metr_la':
-    train_data_file_name = 'datasets/METR-LA/train_filtered.npz'
-    valid_data_file_name = 'datasets/METR-LA/val_filtered.npz'
-    test_data_file_name = 'datasets/METR-LA/test_filtered.npz'
+    train_data_file_name = 'datasets/METR-LA/train_filtered_we.npz'
+    valid_data_file_name = 'datasets/METR-LA/val_filtered_we.npz'
+    test_data_file_name = 'datasets/METR-LA/test_filtered_we.npz'
     train_data_temp = np.load(train_data_file_name)
     train_data = {'x': train_data_temp['x'], 'y': train_data_temp['y']}
     mean = train_data['x'][..., 0].mean()
