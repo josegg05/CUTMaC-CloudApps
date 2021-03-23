@@ -204,7 +204,7 @@ def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, re
 
         sys.stdout = original_stdout  # Reset the standard output to its original value
 
-    with open(res_folder + f'loss_evaluation_{model_type}.txt', 'r') as filehandle:
+    with open(res_folder + f'loss_evaluation_{model_type}{file_sfx}.txt', 'r') as filehandle:
         print(filehandle.read())
 
 

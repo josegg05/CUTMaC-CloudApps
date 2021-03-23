@@ -60,10 +60,11 @@ for var in range(1, 4):
     ax.set_xticks([0, 72, 144, 216])
     ax.set_xticklabels(x_label_list)
     fig.colorbar(img)
+    plt.savefig(f"resultados/dayPer_var{var}.png")
     plt.show()
 
-    for img in data_period_mean:
-        image = img[:, :, -var]
+    for per in range(len(data_period_mean)):
+        image = data_period_mean[per, :, :, -var]
         image = image / maximum
         fig, ax = plt.subplots(1, 1)
         img = ax.imshow(np.transpose(image, (1, 0)), vmin=color_min, vmax=1)
@@ -72,6 +73,7 @@ for var in range(1, 4):
         ax.set_xticks([0, 12, 24, 36, 48, 60])
         ax.set_xticklabels(x_label_list)
         fig.colorbar(img)
+        plt.savefig(f"resultados/dayPer_var{var}_per{per}.png")
         plt.show()
 
 #%%
@@ -79,7 +81,7 @@ data_week_mean = np.mean(data_week, axis=0)
 print(data_week_mean.shape)
 print(data_week_mean[0, 0])
 
-for var in range(2, 3):
+for var in range(1, 4):
     complete_day = np.reshape(data_week_mean, (-1, 27, 5))
     image_day = complete_day[:, :, -var]
     maximum = image_day.max()
@@ -91,10 +93,11 @@ for var in range(2, 3):
     ax.set_xticks([0, 288, 288*2, 288*3, 288*4, 288*5, 288*6])
     ax.set_xticklabels(x_label_list)
     fig.colorbar(img)
+    plt.savefig(f"resultados/weekDay_var{var}.png")
     plt.show()
 
-    for img in data_week_mean:
-        image = img[:, :, -var]
+    for day in range(len(data_week_mean)):
+        image = data_week_mean[day, :, :, -var]
         image = image / maximum
         fig, ax = plt.subplots(1, 1)
         img = ax.imshow(np.transpose(image, (1, 0)), vmin=color_min, vmax=1)
@@ -103,89 +106,90 @@ for var in range(2, 3):
         ax.set_xticks([0, 72, 144, 216])
         ax.set_xticklabels(x_label_list)
         fig.colorbar(img)
+        plt.savefig(f"resultados/weekDay_var{var}_day{day}.png")
         plt.show()
 
 
-# %% eRCNNSeqLin
-pred_variable = 'speed'
-pred_window = 3
-pred_detector = 'all_lin'
-pred_type = 'solo'
-
-out_seq = 3
-img_size = 20
-
-variables_list = ['flow', 'occupancy', 'speed']
-target = variables_list.index(pred_variable)
-
-result_folder = 'resultados/eRCNN/eRCNNSeqLin/ev1/[256]'
-model_name = f'eRCNN_state_dict_model_{target}.pt'
-
-if 'all' in pred_detector:
-    detectors_pred = 27
-else:
-    detectors_pred = 1
-out_size = detectors_pred * pred_window
-hid_error_size = 6 * out_size
-model_type = 'eRCNNSeqLin'
-e_rcnn = eRCNNSeqLin(3, hid_error_size, out_size, pred_window, fc_pre_outs=[256], dev=device)
-e_rcnn.load_state_dict(torch.load(result_folder + model_name, map_location=torch.device(device)))
-
-day_periods = [0, 1, 2, 3]
-for day_period in day_periods:
-    test_set = STImgSeqDatasetDayTests(test_data_file_name, pred_detector=pred_detector,
-                               pred_window=pred_window, target=target, day_period=day_period)
-    test_set, _, _ = torch.utils.data.random_split(test_set, [12500, 12500, len(test_set) - 25000],
-                                                               generator=torch.Generator().manual_seed(seed))
-    eval_util.loss_evaluation(test_set,
-                              e_rcnn,
-                              model_type,
-                              batch_size=batch_size,
-                              res_folder=result_folder,
-                              file_sfx=f'_period_{day_period}',
-                              device=device,
-                              seed=seed)
-
-# %% eRCNNSeqIter
-pred_variable = 'speed'
-pred_window = 3
-pred_detector = 'all_iter'
-pred_type = 'solo'
-
-out_seq = 3
-img_size = 20
-
-variables_list = ['flow', 'occupancy', 'speed']
-target = variables_list.index(pred_variable)
-
-result_folder = 'resultados/eRCNN/eRCNNSeqIter/ev1/error_mean_before/seq3/'
-model_name = f'best_observer.pt'
-
-if 'all' in pred_detector:
-    detectors_pred = 27
-else:
-    detectors_pred = 1
-out_size = 1 * detectors_pred
-hid_error_size = 6 * out_size
-
-model_type = 'eRCNNSeqIter'
-e_rcnn = eRCNNSeqIter(3, hid_error_size, out_size, pred_window=pred_window, out_seq=out_seq, dev=device)
-e_rcnn.load_state_dict(torch.load(result_folder + model_name, map_location=torch.device(device)))
-
-day_periods = [0, 1, 2, 3]
-for day_period in day_periods:
-    test_set = STImgSeqDatasetDayTests(test_data_file_name, pred_detector=pred_detector,
-                               pred_window=pred_window, target=target, day_period=day_period)
-    test_set, _, _ = torch.utils.data.random_split(test_set, [12500, 12500, len(test_set) - 25000],
-                                                               generator=torch.Generator().manual_seed(seed))
-    eval_util.loss_evaluation(test_set,
-                              e_rcnn,
-                              model_type,
-                              batch_size=batch_size,
-                              res_folder=result_folder,
-                              file_sfx=f'_period_{day_period}',
-                              device=device,
-                              seed=seed)
+# # %% eRCNNSeqLin
+# pred_variable = 'speed'
+# pred_window = 3
+# pred_detector = 'all_lin'
+# pred_type = 'solo'
+#
+# out_seq = 3
+# img_size = 20
+#
+# variables_list = ['flow', 'occupancy', 'speed']
+# target = variables_list.index(pred_variable)
+#
+# result_folder = 'resultados/eRCNN/eRCNNSeqLin/ev1/[256]'
+# model_name = f'eRCNN_state_dict_model_{target}.pt'
+#
+# if 'all' in pred_detector:
+#     detectors_pred = 27
+# else:
+#     detectors_pred = 1
+# out_size = detectors_pred * pred_window
+# hid_error_size = 6 * out_size
+# model_type = 'eRCNNSeqLin'
+# e_rcnn = eRCNNSeqLin(3, hid_error_size, out_size, pred_window, fc_pre_outs=[256], dev=device)
+# e_rcnn.load_state_dict(torch.load(result_folder + model_name, map_location=torch.device(device)))
+#
+# day_periods = [0, 1, 2, 3]
+# for day_period in day_periods:
+#     test_set = STImgSeqDatasetDayTests(test_data_file_name, pred_detector=pred_detector,
+#                                pred_window=pred_window, target=target, day_period=day_period)
+#     test_set, _, _ = torch.utils.data.random_split(test_set, [12500, 12500, len(test_set) - 25000],
+#                                                                generator=torch.Generator().manual_seed(seed))
+#     eval_util.loss_evaluation(test_set,
+#                               e_rcnn,
+#                               model_type,
+#                               batch_size=batch_size,
+#                               res_folder=result_folder,
+#                               file_sfx=f'_period_{day_period}',
+#                               device=device,
+#                               seed=seed)
+#
+# # %% eRCNNSeqIter
+# pred_variable = 'speed'
+# pred_window = 3
+# pred_detector = 'all_iter'
+# pred_type = 'solo'
+#
+# out_seq = 3
+# img_size = 20
+#
+# variables_list = ['flow', 'occupancy', 'speed']
+# target = variables_list.index(pred_variable)
+#
+# result_folder = 'resultados/eRCNN/eRCNNSeqIter/ev1/error_mean_before/seq3/'
+# model_name = f'best_observer.pt'
+#
+# if 'all' in pred_detector:
+#     detectors_pred = 27
+# else:
+#     detectors_pred = 1
+# out_size = 1 * detectors_pred
+# hid_error_size = 6 * out_size
+#
+# model_type = 'eRCNNSeqIter'
+# e_rcnn = eRCNNSeqIter(3, hid_error_size, out_size, pred_window=pred_window, out_seq=out_seq, dev=device)
+# e_rcnn.load_state_dict(torch.load(result_folder + model_name, map_location=torch.device(device)))
+#
+# day_periods = [0, 1, 2, 3]
+# for day_period in day_periods:
+#     test_set = STImgSeqDatasetDayTests(test_data_file_name, pred_detector=pred_detector,
+#                                pred_window=pred_window, target=target, day_period=day_period)
+#     test_set, _, _ = torch.utils.data.random_split(test_set, [12500, 12500, len(test_set) - 25000],
+#                                                                generator=torch.Generator().manual_seed(seed))
+#     eval_util.loss_evaluation(test_set,
+#                               e_rcnn,
+#                               model_type,
+#                               batch_size=batch_size,
+#                               res_folder=result_folder,
+#                               file_sfx=f'_period_{day_period}',
+#                               device=device,
+#                               seed=seed)
 
 # %% eREncDecSeq
 pred_variable = 'speed'
@@ -223,11 +227,11 @@ encod_decod.load_state_dict(torch.load(result_folder + model_name, map_location=
 day_periods = [0, 1, 2, 3]
 for day_period in day_periods:
     test_set = STImgSeqDatasetDayTests(test_data_file_name, pred_detector=pred_detector,
-                               pred_window=pred_window, target=target, day_period=day_period)
+                               pred_window=pred_window, target=target, data_size=25000, day_period=day_period)
     test_set, _, _ = torch.utils.data.random_split(test_set, [12500, 12500, len(test_set) - 25000],
                                                                generator=torch.Generator().manual_seed(seed))
     eval_util.loss_evaluation(test_set,
-                              e_rcnn,
+                              encod_decod,
                               model_type,
                               batch_size=batch_size,
                               res_folder=result_folder,

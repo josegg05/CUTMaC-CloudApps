@@ -3,6 +3,8 @@ import sys
 import time
 import json
 from os import system, name
+import numpy as np
+
 
 
 def subscribe_platform_topics(client, platform_topics):
@@ -27,13 +29,25 @@ def on_connect(client, userdata, flags, rc):
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
+    global id_list
     msg.payload = msg.payload.decode("utf-8")
-    clear()
-    print(f'Topic: {msg.topic}')
-    #print(f'Message: {msg.payload}')
+    #clear()
+    #print(f'Topic: {msg.topic}')
+    print(f'Message: {msg.payload}')
     json_object = json.loads(msg.payload)
     json_formatted_str = json.dumps(json_object, indent=2)
-    print(f'Message:{json_formatted_str}')
+    #print(f'Message:{json_formatted_str}')
+    if json_object['lidarObject']['objectClass'] in ['VEHICLE', 'HUMAN', 'UNIDENTIFIED']:
+        #print(f'Message:{json_formatted_str}')
+        print(f'Intersection ID: {json_object["intersectionId"]} - Class: {json_object["lidarObject"]["objectClass"]} - Speed:{json_object["lidarObject"]["velocity"]["speed"]}')
+        id_list.append(json_object["intersectionId"])
+
+        if len(id_list) >= 5000:
+            print(np.unique(np.array(id_list)))
+            np.savetxt('id_list_test.txt', np.unique(np.array(id_list)), fmt='%s')
+            sys.exit()
+
+
 
 
 # clear screen function
@@ -63,6 +77,7 @@ def run():
 # initialize them outside the main block
 # initialize()
 if __name__ == '__main__':
+    id_list = []
     option = input('Select an Option:\n 1. Select a topic from the topic list \n 2. Enter your own topic\n')
 
     if option == '1' or option == '2':

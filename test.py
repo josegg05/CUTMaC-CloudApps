@@ -457,3 +457,26 @@ print(coco)
 
 import random
 print(random.choices([True, False], weights=[0.5, 1], k=1))
+
+
+#%%
+import traces
+import datetime
+time_series = traces.TimeSeries()
+time_series[datetime.datetime(2042, 2, 1,  6,  0,  0)] = 0 #  6:00:00am
+time_series[datetime.datetime(2042, 2, 1,  7, 45, 56)] = 1 #  7:45:56am
+time_series[datetime.datetime(2042, 2, 1,  8, 51, 42)] = 0 #  8:51:42am
+time_series[datetime.datetime(2042, 2, 1, 12,  3, 56)] = 1 # 12:03:56am
+time_series[datetime.datetime(2042, 2, 1, 12,  7, 13)] = 0 # 12:07:13am
+
+print(time_series) # 11:00am
+
+time_series.distribution(
+    start=datetime.datetime(2042, 2, 1,  6,  0,  0),  # 6:00am
+    end=datetime.datetime(2042, 2, 1,  13,  0,  0)   # 1:00pm
+)
+
+
+##% indexisng np array with another np array
+caca = np.arange(1,50,1)
+print(caca[2 + np.array([0,1,2,4,5]), ...])

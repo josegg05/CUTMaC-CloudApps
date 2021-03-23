@@ -12,9 +12,10 @@ import json
 
 
 pred_variable = 'speed'
-pred_detector = 'all'  # 'mid'; 'all'
+pred_detector = 'all_iter'  # 'mid'; 'all'
 pred_type = 'solo'  # 'solo'; 'mean'
-pred_window = 4
+pred_window = 3
+out_seq = pred_window
 n_inputs_enc = 3  #nm
 n_inputs_dec = 3*27  #nm
 seqlen_rec = 12  # 12/24/36/72
@@ -61,18 +62,18 @@ print(label)
 print(label.shape)
 
 #%% Create the model
-if pred_detector == 'all':
+if 'all' in pred_detector:
     n_pred_detector = 27
 else:
     n_pred_detector = 1
 out_size = 1 * n_pred_detector
 
-encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size, hidden_size=hidden_size_rec,
-                               num_layers=num_layers_rec).to(device)
+encod_decod = EncoderDecoder2D(n_inputs_enc=n_inputs_enc, n_inputs_dec=n_inputs_dec, n_outputs=out_size,
+                               hidden_size=hidden_size_rec, num_layers=num_layers_rec, out_seq=out_seq).to(device)
 
 encod_decod = encod_decod.float()
 count_parameters(encod_decod)
-# %% Training
+# %% Trainingf
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
@@ -81,7 +82,7 @@ criterion = nn.MSELoss()  # L2 Norm
 criterion2 = nn.L1Loss()
 optimizer = optim.Adam(encod_decod.parameters(), lr=1e-4)  # ADAM with lr=10^-4
 
-min_loss = 100000
+min_loss = 1000000
 loss_plot_train = []
 mse_plot_valid = []
 mae_plot_valid = []
@@ -92,16 +93,16 @@ for epoch in range(epochs):
     losses_train = []
     start = time.time()
     for batch_idx, (input, targets) in enumerate(train_loader):
-        targets = torch.unsqueeze(targets, 1)
+        #targets = torch.unsqueeze(targets, 1)
         X_r_pre = input.transpose(1, 3)
         X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
         X_c, X_r, Y = input.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets.to(device)
-        print(X_c.shape)
-        print(X_r.shape)
+        #print(X_c.shape)
+        #print(X_r.shape)
 
         optimizer.zero_grad()
         Y_pred = encod_decod(X_c.float(), X_r.float())
-        # print(Y_pred.shape, Y.shape)
+        #print(Y_pred.shape, Y.shape)
         loss = criterion(Y_pred, Y)
         loss.backward()
         optimizer.step()
@@ -121,7 +122,7 @@ for epoch in range(epochs):
     mae_valid = []
     with torch.no_grad():
         for batch_idx, (input, targets) in enumerate(valid_loader):
-            targets = torch.unsqueeze(targets, 1)
+            #targets = torch.unsqueeze(targets, 1)
             X_r_pre = input.transpose(1, 3)
             X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
             X_c, X_r, Y = input.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets.to(device)
@@ -175,7 +176,7 @@ mse_test = []
 mae_test = []
 with torch.no_grad():
     for batch_idx, (inputs_test, targets_test) in enumerate(test_loader):
-        targets_test = torch.unsqueeze(targets_test, 1)
+        #targets_test = torch.unsqueeze(targets_test, 1)
         X_r_pre = inputs_test.transpose(1, 3)
         X_r_pre = X_r_pre.reshape(X_r_pre.shape[0], X_r_pre.shape[1], -1)
         X_c, X_r, Y = inputs_test.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets_test.to(device)

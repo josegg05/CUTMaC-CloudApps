@@ -128,7 +128,7 @@ passed through a linear layers to finally produce a prediction
 # efficient because the error have to be detached to allow the backpropagation. You can add some extra linear
 # layers, but it doesn't affect to much the results
 class eRCNN(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, pred_window=4, dev='cpu'):
+    def __init__(self, input_channel_size, hid_error_size, output_size, pred_window=4, dev='cpu'):
         super().__init__()
 
         self.hid_error_size = hid_error_size
@@ -136,7 +136,7 @@ class eRCNN(nn.Module):
         self.pred_window = pred_window
         self.dev = dev
         self.conv = nn.Conv2d(
-            in_channels=input_size,
+            in_channels=input_channel_size,
             out_channels=32,
             kernel_size=(3, 3),
             stride=1
@@ -198,14 +198,14 @@ class eRCNN(nn.Module):
 
 
 class eRCNN_fc_test(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, n_fc=0, fc_outs=[256]):
+    def __init__(self, input_channel_size, hid_error_size, output_size, n_fc=0, fc_outs=[256]):
         super().__init__()
 
         self.hid_error_size = hid_error_size
         self.n_fc = n_fc
         last_in = 256+32
         self.conv = nn.Conv2d(
-            in_channels=input_size,
+            in_channels=input_channel_size,
             out_channels=32,
             kernel_size=(3, 3),
             stride=1
@@ -254,7 +254,7 @@ class eRCNN_fc_test(nn.Module):
 
 # Newest Version: Error initialization and recurrence inside the code. Model is more efficient.
 class eRCNNSeq(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, pred_window=None, out_seq=1, dev="cpu"):
+    def __init__(self, input_channel_size, hid_error_size, output_size, pred_window=None, out_seq=1, dev="cpu"):
         super().__init__()
 
         self.hid_error_size = hid_error_size
@@ -266,7 +266,7 @@ class eRCNNSeq(nn.Module):
         self.dev = dev
         last_in = 256+32
         self.conv = nn.Conv2d(
-            in_channels=input_size,
+            in_channels=input_channel_size,
             out_channels=32,
             kernel_size=(3, 3),
             stride=1
@@ -334,22 +334,22 @@ class eRCNNSeq(nn.Module):
 
 
 class eRCNNSeqLin(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, pred_window, fc_pre_outs=[], dev="cpu", ):
+    def __init__(self, input_channel_size, detect_num, image_size, out_size, pred_window, fc_pre_outs=[], dev="cpu", error_size=6):
         super().__init__()
 
-        self.hid_error_size = hid_error_size
+        self.hid_error_size = error_size * out_size
         self.pred_window = pred_window
         self.dev = dev
         self.n_fc = len(fc_pre_outs)
         last_in = 256+32
         self.conv = nn.Conv2d(
-            in_channels=input_size,
+            in_channels=input_channel_size,
             out_channels=32,
             kernel_size=(3, 3),
             stride=1
         )
-        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
-        self.lin_error = nn.Linear(hid_error_size, 32)
+        self.lin_input = nn.Linear(32 * int((detect_num-2)/2) * int((image_size-2)/2), 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(self.hid_error_size, 32)
 
         if self.n_fc >= 1:
             self.lin1 = nn.Linear(last_in, fc_pre_outs[0])
@@ -360,7 +360,7 @@ class eRCNNSeqLin(nn.Module):
         if self.n_fc >= 3:
             self.lin3 = nn.Linear(last_in, fc_pre_outs[2])
             last_in = fc_pre_outs[2]
-        self.lin_out = nn.Linear(last_in, output_size)
+        self.lin_out = nn.Linear(last_in, out_size)
 
     def forward(self, input, target):
         error = self.initError(input.shape[1])
@@ -420,27 +420,28 @@ class eRCNNSeqLin(nn.Module):
 
 
 class eRCNNSeqIter(nn.Module):
-    def __init__(self, input_size, hid_error_size, output_size, pred_window=None, out_seq=1, dev="cpu"):
+    def __init__(self, input_channel_size, detect_num, image_size, out_size, pred_window=None, out_seq=1, dev="cpu", error_size=6):
         super().__init__()
 
-        self.hid_error_size = hid_error_size
-        self.out_seq = out_seq
         if pred_window is None:
             self.pred_window = out_seq
         else:
             self.pred_window = pred_window
+        self.hid_error_size = error_size * out_size
+        self.out_seq = out_seq
         self.dev = dev
         last_in = 256+32
         self.conv = nn.Conv2d(
-            in_channels=input_size,
+            in_channels=input_channel_size,
             out_channels=32,
             kernel_size=(3, 3),
             stride=1
         )
-        self.lin_input = nn.Linear(12 * 35 * 32, 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
-        self.lin_error = nn.Linear(hid_error_size, 32)
+
+        self.lin_input = nn.Linear(32 * int((detect_num-2)/2) * int((image_size-2)/2), 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        self.lin_error = nn.Linear(self.hid_error_size, 32)
         self.lin_h = nn.Linear(last_in, 256)
-        self.lin_out = nn.Linear(last_in, output_size)
+        self.lin_out = nn.Linear(last_in, out_size)
 
     def forward(self, input, target, weight=100):
         error = self.initError(input.shape[1])
@@ -449,7 +450,7 @@ class eRCNNSeqIter(nn.Module):
         for seq in range(input.shape[0]):
             # Error vector Implementation 0 (Good - predictions is the next timestep)
             if seq != 0:  # not the first
-                err_seq = output - target[seq - 1]
+                err_seq = output - target[seq - 1]  # err_seq = (output - target[seq - 1])/500
                 error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
 
             out_in = nn.ReLU()(self.conv(input[seq]))
@@ -467,8 +468,8 @@ class eRCNNSeqIter(nn.Module):
                 # err_seq = torch.zeros(output.shape)
                 # err_seq = err_seq.to(self.dev)
                 err_seq = torch.mean(error.view(error.shape[0], 6, -1), 1)  # the "6" must come from outside
-                print(err_seq.shape)
-                print(error.shape)
+                #print(err_seq.shape)
+                #print(error.shape)
             else:
                 err_seq = output - target[seq - 1 + input.shape[0]]
             error = torch.cat((error[:, err_seq.shape[-1]:], err_seq), 1)
@@ -591,7 +592,7 @@ class EncoderConv(nn.Module):
 
 
 class EncoderConv2D(nn.Module):
-    def __init__(self, n_inputs, n_output_hs=30,  n_output_nl=1):
+    def __init__(self, n_inputs, n_output_hs=30,  n_output_nl=1, detect_num=27, image_size=72):
         super(EncoderConv2D, self).__init__()
 
         '''
@@ -612,7 +613,7 @@ class EncoderConv2D(nn.Module):
         )
 
         # Salida para retransformar el espacio en un estado latene.
-        self.linear1 = nn.Linear(in_features=12 * 35, out_features=n_output_hs)  # in_features=Lout3
+        self.linear1 = nn.Linear(in_features=int((detect_num-2)/2) * int((image_size-2)/2), out_features=n_output_hs)  # in_features=Lout3
         self.linear2 = nn.Linear(in_features=conv_out_channels, out_features=n_output_nl)  # in_features=channels[2]
 
     def forward(self, input):
@@ -694,12 +695,13 @@ class EncoderConv2DL(nn.Module):
 
 
 class DecoderRec(nn.Module):
-    def __init__(self, n_inputs, n_outputs, hidden_size_in, num_layers):
+    def __init__(self, n_inputs, n_outputs, hidden_size_in, num_layers, out_seq=3, linear_emb=False):
         super(DecoderRec, self).__init__()
-
+        self.out_seq = out_seq
+        self.linear_emb = linear_emb
         self.gru = nn.GRU(input_size=n_inputs, hidden_size=hidden_size_in, num_layers=num_layers, batch_first=True,
                           bidirectional=False, dropout=0.2)
-        self.linear1 = nn.Linear(in_features=num_layers, out_features=1)
+        self.linear1 = nn.Linear(in_features=num_layers, out_features=out_seq)
         self.linear2 = nn.Linear(in_features=hidden_size_in, out_features=n_outputs)
 
     def forward(self, x, h):
@@ -710,16 +712,27 @@ class DecoderRec(nn.Module):
         :return: y: shape = (batch_size, 1, n_outputs)
         '''
 
-        x, h = self.gru(x, h)
-        h = h.transpose(0, 1)
-        # h = self.linear1(h.transpose(1, 2))
-        h = h.transpose(1, 2)
-        size = h.shape
-        h = h[:, :, -1].view(size[0], size[1], 1)
-        # h.shape = (batch_size, hidden_size, 1)
-        y = self.linear2(h.transpose(1, 2))
-        return y
+        y, h = self.gru(x, h)  # y.shape --> (batch_size, seq_len, hidden_size)
+        #print(y.shape)
+        if (self.linear_emb):
+            y = self.linear1(y.transpose(1, 2))
+            y = y.transpose(1, 2)
+        else:
+            size = y.shape
+            y = y[:, -self.out_seq:, :].view(size[0], self.out_seq, size[2])
+        # y.shape --> (batch_size, out_seq, hidden_size)
+        #print(y.shape)
+        y = self.linear2(y)
 
+        # x, h = self.gru(x, h)
+        # h = h.transpose(0, 1)
+        # # h = self.linear1(h.transpose(1, 2))
+        # h = h.transpose(1, 2)
+        # size = h.shape
+        # h = h[:, :, -1].view(size[0], size[1], 1)
+        # # h.shape = (batch_size, hidden_size, 1)
+        # y = self.linear2(h.transpose(1, 2))
+        return y
 
 class DecoderRecL(nn.Module):
     def __init__(self, n_inputs, n_outputs, hidden_size_in, num_layers):
@@ -783,7 +796,8 @@ class ErrorDecoderRec(nn.Module):
         y, h = self.gru(e_seq, h)  # y.shape --> (batch_size, seq_len, hidden_size)
 
         if(self.linear_emb):
-            y = self.linear1(y.transpose(0, 1).transpose(1, 2))
+            #y = self.linear1(y.transpose(0, 1).transpose(1, 2))  # Bad?
+            y = self.linear1(y.transpose(1, 2))
             y = y.transpose(1, 2)
         else:
             size = y.shape
@@ -834,7 +848,7 @@ class EncoderDecoder2D(nn.Module):
     Decoder rec
     '''
 
-    def __init__(self, n_inputs_enc, n_inputs_dec, n_outputs, hidden_size, num_layers, lin1_conv=False, lin1_rec=False,
+    def __init__(self, n_inputs_enc, n_inputs_dec, n_outputs, hidden_size, num_layers, out_seq, lin1_conv=False, lin1_rec=False,
                  first_lin_size=256):
         super(EncoderDecoder2D, self).__init__()
         if lin1_conv:
@@ -848,14 +862,13 @@ class EncoderDecoder2D(nn.Module):
                                          num_layers=num_layers)
         else:
             self.decoder_r = DecoderRec(n_inputs=n_inputs_dec, n_outputs=n_outputs, hidden_size_in=hidden_size,
-                                        num_layers=num_layers)
+                                        num_layers=num_layers, out_seq=out_seq)
 
     def forward(self, x_c, x_r):
         h = self.encoder_c(x_c).contiguous()
         # print(x_c.shape, x_r.shape)
         y = self.decoder_r(x_r, h)
         return y
-
 
 class ErrorEncoderDecoder2D(nn.Module):
     '''
@@ -864,7 +877,8 @@ class ErrorEncoderDecoder2D(nn.Module):
     '''
 
     def __init__(self, n_inputs_enc, n_inputs_dec, n_outputs, hidden_size, num_layers,
-                 out_seq=3, error_size=6, lin1_conv=False, lin1_rec=False, first_lin_size=256, dev='cpu'):
+                 out_seq=3, error_size=6, lin1_conv=False, lin1_rec=False, first_lin_size=256, image_size=72,
+                 dev='cpu'):
         super(ErrorEncoderDecoder2D, self).__init__()
 
         self.dev = dev
@@ -872,7 +886,8 @@ class ErrorEncoderDecoder2D(nn.Module):
             self.encoder_c = EncoderConv2DL(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers,
                                             first_lin_size=first_lin_size)
         else:
-            self.encoder_c = EncoderConv2D(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers)
+            self.encoder_c = EncoderConv2D(n_inputs=n_inputs_enc, n_output_hs=hidden_size, n_output_nl=num_layers,
+                                           detect_num=n_inputs_dec, image_size=image_size)
 
         self.decoder_r = ErrorDecoderRec(n_inputs=n_inputs_dec, n_outputs=n_outputs, hidden_size_in=hidden_size,
                                          num_layers=num_layers, out_seq=out_seq, error_size=error_size,

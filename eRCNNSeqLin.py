@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 from congestion_predict.data_sets import STImgSeqDataset
+from congestion_predict.data_sets import STImgSeqDatasetMTER_LA
 from congestion_predict.models import eRCNNSeqLin
 from congestion_predict.utilities import count_parameters
 import congestion_predict.evaluation as eval_util
@@ -12,15 +13,17 @@ import time
 import json
 
 # Variables Initialization
-train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
-val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
-
 extra_fc = []  # The best
 
+dataset = 'metr_la'  # cali_i5, metr_la, vegas_i15
 pred_variable = 'speed'
 pred_window = 3
 pred_detector = 'all_lin'
 pred_type = 'solo'
+seq_size = 72
+image_size = 72  # for the cali_i5 dataset
+target_norm = False
+batch_div = 40  # 100
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
@@ -32,22 +35,57 @@ result_folder = 'resultados/eRCNN/eRCNNSeqLin/'
 variables_list = ['flow', 'occupancy', 'speed']
 target = variables_list.index(pred_variable)
 
-#%% Datasets Creation
-data = pd.read_csv(train_data_file_name)
-print(data.head())
-print(data.describe())
-data = data.to_numpy()
-mean = np.mean(data, axis=0)[2:]
-stddev = np.std(data, axis=0)[2:]
+# %%  Datasets Creation
+if dataset == 'cali_i5':
+    train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
+    val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
 
-train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
-                           pred_type=pred_type, pred_window=pred_window, target=target)
-train_set, extra = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
-                                                 generator=torch.Generator().manual_seed(5))
-val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
-                           pred_type=pred_type, pred_window=pred_window, target=target)
-valid_set, test_set, extra = torch.utils.data.random_split(val_test_set, [50000, 50000, len(val_test_set) - 100000],
-                                                           generator=torch.Generator().manual_seed(5))
+    data = pd.read_csv(train_data_file_name)
+    print(data.head())
+    print(data.describe())
+    data = data.to_numpy()
+    mean = np.mean(data, axis=0)[2:]
+    stddev = np.std(data, axis=0)[2:]
+
+    train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                pred_type=pred_type, pred_window=pred_window, target=target,
+                                seq_size=seq_size, image_size=image_size, target_norm=target_norm)
+    train_set, extra1 = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
+                                                      generator=torch.Generator().manual_seed(5))
+    val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                   pred_type=pred_type, pred_window=pred_window, target=target,
+                                   seq_size=seq_size, image_size=image_size, target_norm=target_norm)
+    valid_set, test_set, extra2 = torch.utils.data.random_split(val_test_set,
+                                                                [50000, 50000, len(val_test_set) - 100000],
+                                                                generator=torch.Generator().manual_seed(5))
+    stddev_torch = torch.Tensor([stddev[target]]).to(device)
+    mean_torch = torch.Tensor([mean[target]]).to(device)
+
+elif dataset == 'metr_la':
+    train_data_file_name = 'datasets/METR-LA/train_filtered.npz'
+    valid_data_file_name = 'datasets/METR-LA/val_filtered.npz'
+    test_data_file_name = 'datasets/METR-LA/test_filtered.npz'
+    train_data_temp = np.load(train_data_file_name)
+    train_data = {'x': train_data_temp['x'], 'y': train_data_temp['y']}
+    mean = train_data['x'][..., 0].mean()
+    stddev = train_data['x'][..., 0].std()
+    train_data_temp.close()
+    valid_data_temp = np.load(valid_data_file_name)
+    valid_data = {'x': valid_data_temp['x'], 'y': valid_data_temp['y']}
+    valid_data_temp.close()
+    test_data_temp = np.load(test_data_file_name)
+    test_data = {'x': test_data_temp['x'], 'y': test_data_temp['y']}
+    test_data_temp.close()
+
+    # print(train_data['x'][0,:,:,0:1].shape)
+    train_set = STImgSeqDatasetMTER_LA(train_data, pred_detector=pred_detector, seq_size=seq_size,
+                                       pred_type=pred_type, pred_window=pred_window, target=target)
+    valid_set = STImgSeqDatasetMTER_LA(valid_data, pred_detector=pred_detector, seq_size=seq_size,
+                                       pred_type=pred_type, pred_window=pred_window, target=target)
+    test_set = STImgSeqDatasetMTER_LA(test_data, pred_detector=pred_detector, seq_size=seq_size,
+                                      pred_type=pred_type, pred_window=pred_window, target=target)
+    stddev_torch = torch.Tensor([stddev]).to(device)
+    mean_torch = torch.Tensor([mean]).to(device)
 
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")
@@ -63,24 +101,25 @@ print(label.shape)
 # print(label)
 
 #%% Configure the model
-if pred_detector == 'all' or pred_detector == 'all_lin':
-    detectors_pred = 27
+if 'all' in pred_detector:
+    detect_num = image_seq.shape[2]
 else:
-    detectors_pred = 1
-out_size = detectors_pred * pred_window
+    detect_num = 1
+image_size = image_seq.shape[-1]
+out_size = detect_num * pred_window
 hid_error_size = 6 * out_size
 
 best_loss = 1000000
 
-e_rcnn = eRCNNSeqLin(image_seq.shape[1], hid_error_size, out_size, pred_window, fc_pre_outs=extra_fc, dev=device)
+e_rcnn = eRCNNSeqLin(image_seq.shape[1], detect_num, image_size, out_size, pred_window, fc_pre_outs=extra_fc, dev=device)
 count_parameters(e_rcnn)
 
 ## Training eRCNN
 # Define Dataloader
 torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
-valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=True)
-test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
+valid_loader = torch.utils.data.DataLoader(valid_set, batch_size=batch_size, shuffle=False)
+test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
 e_rcnn.to(device)  # Put the network on GPU if present
 
@@ -95,6 +134,7 @@ min_loss = 100000
 loss_plot_train = []
 mse_plot_valid = []
 mae_plot_valid = []
+
 for epoch in range(epochs):  # 10 epochs
     print(f"******************Epoch {epoch}*******************\n\n")
     torch.autograd.set_detect_anomaly(True)
@@ -112,7 +152,11 @@ for epoch in range(epochs):  # 10 epochs
         loss = torch.zeros(1, requires_grad=True)
 
         outputs = e_rcnn(inputs, targets)
-        loss = criterion(outputs, targets[-1])
+        if (target_norm):
+            loss = criterion(outputs * stddev_torch + mean_torch, targets[-1] * stddev_torch + mean_torch)
+        else:
+            loss = criterion(outputs, targets[-1])
+
         # print(loss)
         loss.backward()
 
@@ -121,7 +165,7 @@ for epoch in range(epochs):  # 10 epochs
         losses_train.append(loss.item())
         end = time.time()
 
-        if (batch_idx + 1) % 100 == 0:
+        if (batch_idx + 1) % batch_div == 0:
             # print(losses_train)
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses_train), end - start))
             loss_plot_train.append(losses_train)
@@ -140,11 +184,16 @@ for epoch in range(epochs):  # 10 epochs
             inputs_valid, targets_valid = inputs_valid.to(device), targets_valid.to(device)
 
             outputs_valid = e_rcnn(inputs_valid, targets_valid)
-            loss_mse = criterion(outputs_valid, targets_valid[-1])
-            loss_mae = criterion2(outputs_valid, targets_valid[-1])
+            if (target_norm):
+                loss_mse = criterion(outputs_valid * stddev_torch + mean_torch, targets_valid[-1] * stddev_torch + mean_torch)
+                loss_mae = criterion2(outputs_valid * stddev_torch + mean_torch, targets_valid[-1] * stddev_torch + mean_torch)
+            else:
+                loss_mse = criterion(outputs_valid, targets_valid[-1])
+                loss_mae = criterion2(outputs_valid, targets_valid[-1])
+
             mse_valid.append(loss_mse.item())
             mae_valid.append(loss_mae.item())
-            if (batch_idx + 1) % 100 == 0:
+            if (batch_idx + 1) % batch_div == 0:
                 print('Batch Index : %d MSE : %.3f' % (batch_idx, np.mean(mse_valid)))
                 print('Batch Index : %d MAE : %.3f' % (batch_idx, np.mean(mae_valid)))
                 mse_plot_valid.append(mse_valid)
@@ -186,11 +235,16 @@ with torch.no_grad():
         inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
         outputs_test = e_rcnn(inputs_test, targets_test)
-        loss_mse = criterion(outputs_test, targets_valid[-1])
-        loss_mae = criterion2(outputs_test, targets_valid[-1])
+        if (target_norm):
+            loss_mse = criterion(outputs_test * stddev_torch + mean_torch, targets_valid[-1] * stddev_torch + mean_torch)
+            loss_mae = criterion2(outputs_test * stddev_torch + mean_torch, targets_valid[-1] * stddev_torch + mean_torch)
+        else:
+            loss_mse = criterion(outputs_test, targets_valid[-1])
+            loss_mae = criterion2(outputs_test, targets_valid[-1])
+
         mse_test.append(loss_mse.item())
         mae_test.append(loss_mae.item())
-        if (batch_idx + 1) % 100 == 0:
+        if (batch_idx + 1) % batch_div == 0:
             print('Batch Index : %d MSE : %.3f' % (batch_idx, np.mean(mse_test)))
             print('Batch Index : %d MAE : %.3f' % (batch_idx, np.mean(mae_test)))
             # loss_plot_test.append(np.mean(losses_test))
