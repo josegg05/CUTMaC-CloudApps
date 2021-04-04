@@ -212,11 +212,14 @@ class STImageDataset3(torch.utils.data.Dataset):
 class STImgSeqDataset(torch.utils.data.Dataset):
     def __init__(self,
                  data_file_name, mean=None, stddev=None, pred_detector='all', pred_type='solo', pred_window=4, target=2,
-                 seq_size=72, image_size=72, target_norm=False, data_size=0, transforms=None):
+                 seq_size=72, image_size=72, target_norm=False, data_size=0, transforms=None, detect_num=None):
 
         self.data = pd.read_csv(data_file_name)
         self.data = self.data.to_numpy()
-        self.detect_num = int(np.max(self.data[:, 1]) + 1)
+        if detect_num is None:
+            self.detect_num = int(np.max(self.data[:, 1]) + 1)
+        else:
+            self.detect_num = detect_num
         if mean is not None:
             self.mean = mean
         else:
@@ -722,3 +725,98 @@ class STEncDecSeqDataset(torch.utils.data.Dataset):
             image = self.transforms(image)
 
         return image, label
+
+
+# Load model function
+def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_size, image_size, target_norm,
+                  device='cpu'):
+    if dataset == 'cali_i5':
+        train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
+        val_test_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2016.csv"
+
+        data = pd.read_csv(train_data_file_name)
+        print(data.head())
+        print(data.describe())
+        data = data.to_numpy()
+        mean = np.mean(data, axis=0)[2:]
+        stddev = np.std(data, axis=0)[2:]
+
+        train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                    pred_type=pred_type, pred_window=pred_window, target=target,
+                                    seq_size=seq_size, image_size=image_size, target_norm=target_norm)
+        train_set, extra1 = torch.utils.data.random_split(train_set, [100000, len(train_set) - 100000],
+                                                          generator=torch.Generator().manual_seed(5))
+        val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                       pred_type=pred_type, pred_window=pred_window, target=target,
+                                       seq_size=seq_size, image_size=image_size, target_norm=target_norm)
+        valid_set, test_set, extra2 = torch.utils.data.random_split(val_test_set,
+                                                                    [50000, 50000, len(val_test_set) - 100000],
+                                                                    generator=torch.Generator().manual_seed(5))
+        stddev_torch = torch.Tensor([stddev[target]]).to(device)
+        mean_torch = torch.Tensor([mean[target]]).to(device)
+
+    elif dataset == 'metr_la':
+        train_data_file_name = 'datasets/METR-LA/train_filtered_we.npz'
+        valid_data_file_name = 'datasets/METR-LA/val_filtered_we.npz'
+        test_data_file_name = 'datasets/METR-LA/test_filtered_we.npz'
+        train_data_temp = np.load(train_data_file_name)
+        train_data = {'x': train_data_temp['x'], 'y': train_data_temp['y']}
+        mean = train_data['x'][..., 0].mean()
+        stddev = train_data['x'][..., 0].std()
+        train_data_temp.close()
+        valid_data_temp = np.load(valid_data_file_name)
+        valid_data = {'x': valid_data_temp['x'], 'y': valid_data_temp['y']}
+        valid_data_temp.close()
+        test_data_temp = np.load(test_data_file_name)
+        test_data = {'x': test_data_temp['x'], 'y': test_data_temp['y']}
+        test_data_temp.close()
+
+        # print(train_data['x'][0,:,:,0:1].shape)
+        train_set = STImgSeqDatasetMTER_LA(train_data, pred_detector=pred_detector, seq_size=seq_size,
+                                           pred_type=pred_type, pred_window=pred_window, target=target)
+        valid_set = STImgSeqDatasetMTER_LA(valid_data, pred_detector=pred_detector, seq_size=seq_size,
+                                           pred_type=pred_type, pred_window=pred_window, target=target)
+        test_set = STImgSeqDatasetMTER_LA(test_data, pred_detector=pred_detector, seq_size=seq_size,
+                                          pred_type=pred_type, pred_window=pred_window, target=target)
+        stddev_torch = torch.Tensor([stddev]).to(device)
+        mean_torch = torch.Tensor([mean]).to(device)
+
+    elif dataset == 'vegas_i15':
+        data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete.csv"
+        data = pd.read_csv(data_file_name)
+
+        train_data = data.iloc[:int(data.shape[0] / 2), :]
+        # val_test_data = data.iloc[int(data.shape[0] / 2):, :]
+
+        # train_data.to_csv('datasets/las_vegas/i15_bugatti/data_evenly_complete_train.csv', index=False)
+        # val_test_data.to_csv('datasets/las_vegas/i15_bugatti/data_evenly_complete_val_test.csv', index=False)
+
+        # print(train_data.head())
+        # print(train_data.describe())
+        train_data = train_data.to_numpy()
+
+        mean = np.mean(train_data[:, 2:].astype(np.float32), axis=0)
+        stddev = np.std(train_data[:, 2:].astype(np.float32), axis=0)
+        print(mean)
+        print(stddev)
+
+        train_data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete_train.csv"
+        val_test_data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete_val_test.csv"
+        detect_num = 28
+
+        train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                    pred_type=pred_type, pred_window=pred_window, target=target,
+                                    seq_size=seq_size, image_size=image_size, target_norm=target_norm,
+                                    detect_num=detect_num)
+        val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                       pred_type=pred_type, pred_window=pred_window, target=target,
+                                       seq_size=seq_size, image_size=image_size, target_norm=target_norm,
+                                       detect_num=detect_num)
+        valid_set, test_set = torch.utils.data.random_split(val_test_set,
+                                                            [int(len(val_test_set) / 2), int(len(val_test_set) / 2)],
+                                                            generator=torch.Generator().manual_seed(5))
+        stddev_torch = torch.Tensor([stddev[target]]).to(device)
+        mean_torch = torch.Tensor([mean[target]]).to(device)
+
+    return train_set, valid_set, test_set, mean_torch, stddev_torch
+

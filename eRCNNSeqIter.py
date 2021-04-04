@@ -12,15 +12,15 @@ import time
 import json
 
 # Variables Initialization
-dataset = 'metr_la'  # cali_i5, metr_la, vegas_i15
+dataset = 'vegas_i15'  # cali_i5, metr_la, vegas_i15
 pred_variable = 'speed'
-pred_window = 12
+pred_window = 4
 pred_detector = 'all_iter'
 pred_type = 'solo'
 seq_size = 72
 image_size = 72  # for the cali_i5 dataset
 target_norm = False
-batch_div = 40  # 100
+batch_div = 30  # 100
 
 out_seq = pred_window  # Size of the out sequence
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
@@ -85,6 +85,43 @@ elif dataset == 'metr_la':
                                       pred_type=pred_type, pred_window=pred_window, target=target)
     stddev_torch = torch.Tensor([stddev]).to(device)
     mean_torch = torch.Tensor([mean]).to(device)
+
+elif dataset == 'vegas_i15':
+    data_file_name = "datasets/la_vegas/i15_bugatti/data_evenly_complete.csv"
+    data = pd.read_csv(data_file_name)
+
+    train_data = data.iloc[:int(data.shape[0]/2), :]
+    val_test_data = data.iloc[int(data.shape[0]/2):, :]
+
+    #train_data.to_csv('datasets/la_vegas/i15_bugatti/data_evenly_complete_train.csv', index=False)
+    #val_test_data.to_csv('datasets/la_vegas/i15_bugatti/data_evenly_complete_val_test.csv', index=False)
+
+    print(train_data.head())
+    print(train_data.describe())
+    train_data = train_data.to_numpy()
+
+    mean = np.mean(train_data[:, 2:].astype(np.float32), axis=0)
+    stddev = np.std(train_data[:, 2:].astype(np.float32), axis=0)
+    print(mean)
+    print(stddev)
+
+    train_data_file_name = "datasets/la_vegas/i15_bugatti/data_evenly_complete_train.csv"
+    val_test_data_file_name = "datasets/la_vegas/i15_bugatti/data_evenly_complete_val_test.csv"
+    detect_num = 28
+
+    train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                pred_type=pred_type, pred_window=pred_window, target=target,
+                                seq_size=seq_size, image_size=image_size, target_norm=target_norm, detect_num=detect_num)
+    print('cacacacacacacaca')
+    val_test_set = STImgSeqDataset(val_test_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                   pred_type=pred_type, pred_window=pred_window, target=target,
+                                   seq_size=seq_size, image_size=image_size, target_norm=target_norm, detect_num=detect_num)
+    print('cacacacacacacaca')
+    valid_set, test_set = torch.utils.data.random_split(val_test_set,
+                                                        [int(len(val_test_set)/2), int(len(val_test_set)/2)],
+                                                        generator=torch.Generator().manual_seed(5))
+    stddev_torch = torch.Tensor([stddev[target]]).to(device)
+    mean_torch = torch.Tensor([mean[target]]).to(device)
 
 print(f"Size of train_set = {len(train_set)}")
 print(f"Size of valid_set = {len(valid_set)}")

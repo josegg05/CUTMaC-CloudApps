@@ -1,11 +1,11 @@
 import random
-
 import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from congestion_predict.utilities import count_parameters
 
 ''' 
 * Basic Network 
@@ -341,14 +341,17 @@ class eRCNNSeqLin(nn.Module):
         self.pred_window = pred_window
         self.dev = dev
         self.n_fc = len(fc_pre_outs)
-        last_in = 256+32
+        last_in = 128+32  # last_in = 256+32 original
         self.conv = nn.Conv2d(
             in_channels=input_channel_size,
-            out_channels=32,
+            out_channels=16,  # 32 original
             kernel_size=(3, 3),
             stride=1
         )
-        self.lin_input = nn.Linear(32 * int((detect_num-2)/2) * int((image_size-2)/2), 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
+        #self.lin_input = nn.Linear(32 * int((detect_num-2)/2) * int((image_size-2)/2), 256)  # 32 (25*70) Feature maps after AvgPool2d(2) original
+        self.lin_input = nn.Linear(16 * int((detect_num - 2) / 2) * int((image_size - 2) / 2),
+                                   128)  # 32 (25*70) Feature maps after AvgPool2d(2)
+
         self.lin_error = nn.Linear(self.hid_error_size, 32)
 
         if self.n_fc >= 1:
@@ -438,6 +441,8 @@ class eRCNNSeqIter(nn.Module):
             stride=1
         )
 
+        self.drop_input = nn.Dropout(p=0.5)  # New. Comment to original
+        self.drop_error = nn.Dropout(p=0.5)  # New. Comment to original
         self.lin_input = nn.Linear(32 * int((detect_num-2)/2) * int((image_size-2)/2), 256)  # 32 (25*70) Feature maps after AvgPool2d(2)
         self.lin_error = nn.Linear(self.hid_error_size, 32)
         self.lin_h = nn.Linear(last_in, 256)
@@ -456,8 +461,8 @@ class eRCNNSeqIter(nn.Module):
             out_in = nn.ReLU()(self.conv(input[seq]))
             out_in = nn.AvgPool2d(2)(out_in)  # Average Pooling with a square kernel_size=(2,2) and stride=kernel_size=(2,2)
             out_in = out_in.view(-1, self.num_flat_features(out_in))
-            out_in = nn.ReLU()(self.lin_input(out_in))
-            out_err = nn.ReLU()(self.lin_error(error))
+            out_in = self.drop_input(nn.ReLU()(self.lin_input(out_in)))  # out_in = nn.ReLU()(self.lin_input(out_in)) original
+            out_err = self.drop_error(nn.ReLU()(self.lin_error(error)))  # out_err = nn.ReLU()(self.lin_error(error)) original
             output_pre = torch.cat((out_in, out_err), 1)
             output = self.lin_out(output_pre)
 
@@ -902,3 +907,34 @@ class ErrorEncoderDecoder2D(nn.Module):
             # print(x_c.shape, x_r.shape)
             y, error = self.decoder_r(error, h, target[idx])
         return y
+
+
+#
+def load_model(model_name, pred_detector, image_seq, pred_window, out_seq, device,
+              extra_fc=[], hidden_size_rec=0, num_layers_rec=0, seqlen_rec=0):
+    # %% Create the model
+    if 'all' in pred_detector:
+        detect_num = image_seq.shape[-2]
+    else:
+        detect_num = 1
+    image_size = image_seq.shape[-1]
+
+    if model_name == 'eRCNNSeqIter':
+        out_size = 1 * detect_num
+        # hid_error_size = 6 * out_size
+        model = eRCNNSeqIter(image_seq.shape[1], detect_num, image_size, out_size, pred_window=pred_window,
+                             out_seq=out_seq, dev=device)
+    elif model_name == 'eRCNNSeqLin':
+        out_size = detect_num * pred_window
+        model = eRCNNSeqLin(image_seq.shape[1], detect_num, image_size, out_size, pred_window, fc_pre_outs=extra_fc,
+                            dev=device)
+    elif model_name == 'eREncDec':
+        out_size = 1 * detect_num
+        model = ErrorEncoderDecoder2D(n_inputs_enc=image_seq.shape[1], n_inputs_dec=detect_num, n_outputs=out_size,
+                                      hidden_size=hidden_size_rec, num_layers=num_layers_rec, out_seq=out_seq,
+                                      error_size=seqlen_rec, image_size=image_size, dev=device)
+
+        model = model.float()
+
+    count_parameters(model)
+    return model
