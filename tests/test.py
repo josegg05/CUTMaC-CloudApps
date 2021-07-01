@@ -484,3 +484,9 @@ print(caca[2 + np.array([0,1,2,4,5]), ...])
 coco = caca[np.array([20,10,2,7,5]), ...]
 print(coco)
 print(coco[0])
+
+#%%
+import numpy as np
+lolo = np.array(([1,1,3,np.nan,3]))
+lala = np.nanmean(lolo)
+print(lala)

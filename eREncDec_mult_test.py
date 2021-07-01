@@ -12,13 +12,13 @@ import congestion_predict.evaluation as eval_util
 import json
 
 # Variables Initialization
-dataset = 'vegas_i15'  # cali_i5, metr_la, vegas_i15
+dataset = 'metr_la'  # cali_i5, metr_la, vegas_i15
 pred_variable = 'speed'
-pred_window = 4
+pred_window = 12
 pred_detector = 'all_iter'
 pred_type = 'solo'
 seq_size = 12
-image_size = 24  # for the cali_i5 dataset
+image_size = 72  # for the cali_i5 dataset
 target_norm = False
 batch_div = 40  # 100
 
@@ -144,21 +144,21 @@ else:
 image_size = image_seq.shape[-1]
 out_size = 1 * detect_num
 
-#seqlen_rec_list = [6, 8, 12]#, 24, 36, 72]  # 1
+seqlen_rec_list = [1,2,3,4,5]  #[6, 8, 12, 24, 36, 72]  # 1
 #num_layers_rec_list = [2, 3, 4]  # 2
 #lin1_rec_active = [True]  # 3
 #lin1_conv = True; first_lin_size_list = [128, 256]  # 4
-hidden_size_rec_list = [7, 20, 40]  # 5
-#for seqlen_rec in seqlen_rec_list:  # 1
+#hidden_size_rec_list = [7, 20, 40]  # 5
+for seqlen_rec in seqlen_rec_list:  # 1
 #for num_layers_rec in num_layers_rec_list:  # 2
 #for lin1_rec in lin1_rec_active:  # 3
 #for first_lin_size in first_lin_size_list:  # 4
-for hidden_size_rec in hidden_size_rec_list:  # 5
-    # plot_ind = seqlen_rec  # 1
+#for hidden_size_rec in hidden_size_rec_list:  # 5
+    plot_ind = seqlen_rec  # 1
     # plot_ind = num_layers_rec  # 2
     # plot_ind = 1  # 3
     # plot_ind = first_lin_size  # 4
-    plot_ind = hidden_size_rec
+    # plot_ind = hidden_size_rec
     encod_decod = ErrorEncoderDecoder2D(n_inputs_enc=image_seq.shape[1], n_inputs_dec=detect_num, n_outputs=out_size,
                                         hidden_size=hidden_size_rec, num_layers=num_layers_rec, out_seq=out_seq,
                                         error_size=seqlen_rec, image_size=image_size, dev=device)

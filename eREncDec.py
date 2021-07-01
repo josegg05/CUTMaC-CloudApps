@@ -80,14 +80,21 @@ elif dataset == 'metr_la':
     test_data_temp.close()
 
     # print(train_data['x'][0,:,:,0:1].shape)
-    train_set = STImgSeqDatasetMTER_LA(train_data, pred_detector=pred_detector, seq_size=seq_size,
-                                       pred_type=pred_type, pred_window=pred_window, target=target)
-    valid_set = STImgSeqDatasetMTER_LA(valid_data, pred_detector=pred_detector, seq_size=seq_size,
-                                       pred_type=pred_type, pred_window=pred_window, target=target)
-    test_set = STImgSeqDatasetMTER_LA(test_data, pred_detector=pred_detector, seq_size=seq_size,
-                                      pred_type=pred_type, pred_window=pred_window, target=target)
+    train_set = STImgSeqDatasetMTER_LA(train_data, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                       seq_size=seq_size,
+                                       pred_type=pred_type, pred_window=pred_window, target=target,
+                                       target_norm=target_norm)
+    valid_set = STImgSeqDatasetMTER_LA(valid_data, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                       seq_size=seq_size,
+                                       pred_type=pred_type, pred_window=pred_window, target=target,
+                                       target_norm=target_norm)
+    test_set = STImgSeqDatasetMTER_LA(test_data, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                      seq_size=seq_size,
+                                      pred_type=pred_type, pred_window=pred_window, target=target,
+                                      target_norm=target_norm)
     stddev_torch = torch.Tensor([stddev]).to(device)
     mean_torch = torch.Tensor([mean]).to(device)
+
 elif dataset == 'vegas_i15':
     data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete.csv"
     data = pd.read_csv(data_file_name)

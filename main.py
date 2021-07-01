@@ -22,8 +22,8 @@ def train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torc
 
     criterion = nn.MSELoss()  # L2 Norm
     criterion2 = nn.L1Loss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)  # ADAM with lr=10^-4
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.1)  # exponential decay every epoch = 2000iter
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)  # ADAM with lr=10^-4  // Changed lr=1e-3 --> lr=1e-4
+    #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.1)  # exponential decay every epoch = 2000iter  // Changed comment
 
     # sys.stdout = open("log.txt", "w")
     torch.cuda.empty_cache()
@@ -54,9 +54,9 @@ def train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torc
             loss = torch.zeros(1, requires_grad=True)
 
             if model_name == 'eRCNNSeqIter':
-                outputs = model(inputs, targets, weight)
+                outputs = model(inputs.float(), targets.float(), weight)  # // Changed float
             else:
-                outputs = model(inputs, targets)
+                outputs = model(inputs.float(), targets.float())  # // Changed float
 
             if target_norm:
                 if model_name == 'eRCNNSeqLin':
@@ -72,7 +72,7 @@ def train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torc
 
             loss.backward()
 
-            nn.utils.clip_grad_norm_(model.parameters(), 40)  # gradient clipping norm for eRCNN
+            nn.utils.clip_grad_norm_(model.parameters(), 40)  # gradient clipping norm // Changed comment
             optimizer.step()  # Updated the weights
             losses_train.append(loss.item())
             end = time.time()
@@ -83,9 +83,10 @@ def train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torc
                 batch_idx, np.mean(losses_train), end - start))
                 loss_plot_train.append(losses_train)
                 losses_train = []
-                weight += weight_add
+                if model_name == 'eRCNNSeqIter':
+                    weight += weight_add
                 start = time.time()
-        scheduler.step()
+        #scheduler.step()  # // Changed comment
 
         # Evaluate
         model.eval()
@@ -97,7 +98,7 @@ def train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torc
                 targets_valid = targets_valid.permute(1, 0, 2)
                 inputs_valid, targets_valid = inputs_valid.to(device), targets_valid.to(device)
 
-                outputs_valid = model(inputs_valid, targets_valid)
+                outputs_valid = model(inputs_valid.float(), targets_valid.float())  # // Changed float
                 if (target_norm):
                     if model_name == 'eRCNNSeqLin':
                         loss_mse = criterion(outputs_valid * stddev_torch + mean_torch,
@@ -171,7 +172,7 @@ def test_model(model_name, model, model_file_name, test_set):
             targets_test = targets_test.permute(1, 0, 2)
             inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
-            outputs_test = model(inputs_test, targets_test)
+            outputs_test = model(inputs_test.float(), targets_test.float())  # // Changed float
             if (target_norm):
                 if model_name == 'eRCNNSeqLin':
                     loss_mse = criterion(outputs_test * stddev_torch + mean_torch,
@@ -255,10 +256,10 @@ if __name__ == '__main__':
     # Data Variables
     target = int(pred_variable) - 1
     variables_list = ['flow', 'occupancy', 'speed']
-    pred_window = 4
+    pred_window = 12
     out_seq = pred_window  # Size of the out sequence
     pred_type = 'solo'
-    seq_size = 72
+    seq_size = 12  # Best 12 for eREncDec
     image_size = 72  # for the cali_i5 dataset
     target_norm = False
     batch_div = 40  # 100
@@ -281,7 +282,10 @@ if __name__ == '__main__':
     seqlen_rec = 6  # 8/12
 
     # Training Variables
-    epochs = 10
+    if model_name == 'eRCNNSeqIter':
+        epochs = 10
+    else:
+        epochs = 10000
     batch_size = 50  # Training Batch size
     patience = 5
 
@@ -302,8 +306,8 @@ if __name__ == '__main__':
 
     # %% View Image sample
     image_seq, label = train_set[0]
-    print(image_seq.shape)
-    print(label.shape)
+    print(image_seq)
+    print(label)
 
     model = load_model(model_name,
                        pred_detector,
@@ -319,7 +323,3 @@ if __name__ == '__main__':
     loss_plot_train, mse_plot_valid, mae_plot_valid = train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torch)
     mse_plot_test, mae_plot_test = test_model(model_name, model, 'best_observer.pt', test_set)
     print_results(result_folder, target, loss_plot_train, mse_plot_valid, mae_plot_valid, mse_plot_test, mae_plot_test)
-
-
-
-

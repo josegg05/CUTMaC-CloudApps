@@ -451,7 +451,7 @@ class STImgSeqDatasetDayTests(torch.utils.data.Dataset):  # Days divided in 4 pe
 class STImgSeqDatasetMTER_LA(torch.utils.data.Dataset):
     def __init__(self,
                  data_file, mean=None, stddev=None, pred_detector='all', pred_type='solo', pred_window=3, target=2,
-                 seq_size=12, transforms=None):
+                 seq_size=12, target_norm=False, transforms=None):
         self.data = data_file
         self.detect_num = int(self.data['x'].shape[2])
         if mean is not None:
@@ -472,6 +472,7 @@ class STImgSeqDatasetMTER_LA(torch.utils.data.Dataset):
         self.pred_detector = pred_detector
         self.pred_type = pred_type
         self.target = target
+        self.target_norm = target_norm
 
     def __len__(self):
         return self.data_size
@@ -504,10 +505,14 @@ class STImgSeqDatasetMTER_LA(torch.utils.data.Dataset):
                         label = self.data['y'][(idx + sq), wind,:,0]
                         label = torch.from_numpy(label.astype(np.float32))
                         if wind != range(self.pred_window)[-1]:  # not last window
+                            if (self.target_norm):
+                                label = (label - self.mean) / self.stddev
                             label.unsqueeze_(0)
                             labels_seq.append(label)
 
             # print(f'The label shape is:{label.shape}')
+            if (self.target_norm):
+                label = (label - self.mean) / self.stddev
             label.unsqueeze_(0)
             image_seq.append(image)
             labels_seq.append(label)
@@ -772,12 +777,18 @@ def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_si
         test_data_temp.close()
 
         # print(train_data['x'][0,:,:,0:1].shape)
-        train_set = STImgSeqDatasetMTER_LA(train_data, pred_detector=pred_detector, seq_size=seq_size,
-                                           pred_type=pred_type, pred_window=pred_window, target=target)
-        valid_set = STImgSeqDatasetMTER_LA(valid_data, pred_detector=pred_detector, seq_size=seq_size,
-                                           pred_type=pred_type, pred_window=pred_window, target=target)
-        test_set = STImgSeqDatasetMTER_LA(test_data, pred_detector=pred_detector, seq_size=seq_size,
-                                          pred_type=pred_type, pred_window=pred_window, target=target)
+        train_set = STImgSeqDatasetMTER_LA(train_data, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                           seq_size=seq_size,
+                                           pred_type=pred_type, pred_window=pred_window, target=target,
+                                           target_norm=target_norm)
+        valid_set = STImgSeqDatasetMTER_LA(valid_data, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                           seq_size=seq_size,
+                                           pred_type=pred_type, pred_window=pred_window, target=target,
+                                           target_norm=target_norm)
+        test_set = STImgSeqDatasetMTER_LA(test_data, mean=mean, stddev=stddev, pred_detector=pred_detector,
+                                          seq_size=seq_size,
+                                          pred_type=pred_type, pred_window=pred_window, target=target,
+                                          target_norm=target_norm)
         stddev_torch = torch.Tensor([stddev]).to(device)
         mean_torch = torch.Tensor([mean]).to(device)
 
@@ -818,5 +829,7 @@ def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_si
         stddev_torch = torch.Tensor([stddev[target]]).to(device)
         mean_torch = torch.Tensor([mean[target]]).to(device)
 
+    print(mean_torch)
+    print(stddev_torch)
     return train_set, valid_set, test_set, mean_torch, stddev_torch
 

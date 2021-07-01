@@ -24,6 +24,8 @@ batch_div = 30  # 100
 
 out_seq = pred_window  # Size of the out sequence
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
+print(device)
+print(torch.cuda.get_device_name(0))
 # device = "cpu"
 epochs = 1000
 batch_size = 50  # Training Batch size

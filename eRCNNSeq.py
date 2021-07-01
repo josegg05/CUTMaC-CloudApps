@@ -21,6 +21,8 @@ pred_type = 'solo'
 
 out_seq = pred_window  # Size of the out sequence
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
+print(device)
+print(torch.cuda.get_device_name(0))
 # device = "cpu"
 epochs = 10
 batch_size = 50  # Training Batch size
@@ -99,6 +101,8 @@ for epoch in range(epochs):  # 10 epochs
     # Train
     start = time.time()
     for batch_idx, (inputs, targets) in enumerate(train_loader):
+        #print(torch.cuda.get_device_name(0))
+        #print(device)
         inputs = inputs.permute(1, 0, 2, 3, 4)
         targets = targets.permute(1, 0, 2)
         #print(inputs[0][0][0][0][:10])
@@ -117,7 +121,7 @@ for epoch in range(epochs):  # 10 epochs
         losses_train.append(loss.item())
         end = time.time()
 
-        if (batch_idx + 1) % 100 == 0:
+        if (batch_idx) % 100 == 0:
             #print(losses_train)
             print('Batch Index : %d Loss : %.3f Time : %.3f seconds ' % (batch_idx, np.mean(losses_train), end - start))
             loss_plot_train.append(losses_train)

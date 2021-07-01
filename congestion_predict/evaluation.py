@@ -96,7 +96,8 @@ def print_loss_middle_seq(loss_type, loss):
     return out
 
 
-def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
+def model_testing(test_set, model, model_type, batch_size, seqlen_rec, target_norm,  device,
+                  stddev_torch=1, mean_torch=0, mod_lin=False):
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
     model.to(device)  # Put the network on GPU if present
@@ -113,6 +114,8 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
                 inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
                 outputs_test = model(inputs_test, targets_test)
+                if target_norm:
+                    outputs_test = outputs_test * stddev_torch + mean_torch
 
                 if model_type == 'eRCNN':
                     loss_mse = criterion(outputs_test, targets_test[-1])
@@ -133,6 +136,8 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
                 X_c, X_r, Y = inputs_test.to(device), inputs_test[:, -seqlen_rec:, :].to(device), targets_test.to(device)
 
                 outputs_test = model(X_c.float(), X_r.float())
+                if target_norm:
+                    outputs_test = outputs_test * stddev_torch + mean_torch
 
                 loss_mse = criterion(outputs_test, Y)
                 loss_mae = criterion2(outputs_test, Y)
@@ -144,6 +149,8 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
                 X_c, X_r, Y = inputs_test.to(device), X_r_pre[:, -seqlen_rec:, :].to(device), targets_test.to(device)
 
                 outputs_test = model(X_c.float(), X_r.float())
+                if target_norm:
+                    outputs_test = outputs_test * stddev_torch + mean_torch
 
                 loss_mse = criterion(outputs_test, Y)
                 loss_mae = criterion2(outputs_test, Y)
@@ -154,10 +161,22 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
                 inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
                 outputs_test = model(inputs_test, targets_test)
+                if target_norm:
+                    outputs_test = outputs_test * stddev_torch + mean_torch
 
-                out_seq = outputs_test.shape[1]
-                loss_mse = criterion(outputs_test, targets_test[-out_seq:].transpose(0, 1))
-                loss_mae = criterion2(outputs_test, targets_test[-out_seq:].transpose(0, 1))
+                if mod_lin:
+                    out_seq = int(outputs_test.shape[1]/targets_test.shape[-1])
+                    print(outputs_test.view(batch_size, out_seq, -1).shape)
+                    print(targets_test[-out_seq:].transpose(0, 1).shape)
+                    loss_mse = criterion(outputs_test.view(batch_size, out_seq, -1), targets_test[-out_seq:].transpose(0, 1))
+                    loss_mae = criterion2(outputs_test.view(batch_size, out_seq, -1), targets_test[-out_seq:].transpose(0, 1))
+
+                else:
+                    out_seq = outputs_test.shape[1]
+                    print(f'preds: {outputs_test.shape}')
+                    print(f'testy: {targets_test[-out_seq:].transpose(0, 1).shape}')
+                    loss_mse = criterion(outputs_test, targets_test[-out_seq:].transpose(0, 1))
+                    loss_mae = criterion2(outputs_test, targets_test[-out_seq:].transpose(0, 1))
 
             loss_mse_list.append(loss_mse)
             loss_mae_list.append(loss_mae)
@@ -167,7 +186,8 @@ def model_testing(test_set, model, model_type, batch_size, seqlen_rec, device):
     return loss_mse.cpu(), loss_mae.cpu()
 
 
-def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, res_folder='', file_sfx='', device=None, seed=None, print_out=True):
+def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, res_folder='', file_sfx='',
+                    target_norm=False, stddev_torch=1, mean_torch=0, mod_lin=False, device=None, seed=None, print_out=True):
     original_stdout = sys.stdout  # Save a reference to the original standard output
     with open(res_folder + f'loss_evaluation_{model_type}{file_sfx}.txt', 'w') as filehandle:
         sys.stdout = filehandle  # Change the standard output to the file we created.
@@ -183,8 +203,10 @@ def loss_evaluation(test_set, model, model_type, batch_size=0, seqlen_rec=12, re
 
         count_parameters(model)
 
-        loss_mse, loss_mae = model_testing(test_set, model, model_type, batch_size, seqlen_rec, device)
-
+        loss_mse, loss_mae = model_testing(test_set, model, model_type, batch_size, seqlen_rec, target_norm, device,
+                                           stddev_torch=stddev_torch, mean_torch=mean_torch, mod_lin=mod_lin)
+        print(f'loss_mse: {loss_mse.shape}')
+        print(f'loss_mae: {loss_mae.shape}')
         # loss_mae.shape --> (batch_size, seq_size, n_detect)
         print(' 1. ***********')
         print_loss('MSE', loss_mse)
