@@ -172,7 +172,10 @@ def test_model(model_name, model, model_file_name, test_set):
             targets_test = targets_test.permute(1, 0, 2)
             inputs_test, targets_test = inputs_test.to(device), targets_test.to(device)
 
+            print(f'Input Image = {inputs_test.float()}')
+            print(f'Input Image shape = {inputs_test.shape}')
             outputs_test = model(inputs_test.float(), targets_test.float())  # // Changed float
+            print(f'outputs_test = {outputs_test}')
             if (target_norm):
                 if model_name == 'eRCNNSeqLin':
                     loss_mse = criterion(outputs_test * stddev_torch + mean_torch,
@@ -239,6 +242,11 @@ if __name__ == '__main__':
                          '2. METR_LA\n'
                          '3. Las Vegas I15\n')
 
+    if dataset_idx == '3':
+        datect_num_idx = input('Select number of detectors:\n'
+                               '1. 26 detectors\n'
+                               '2. 28 detectors\n')
+
     pred_variable = input('Select a prediction variable:\n'
                           '1. Flow\n'
                           '2. Occupancy\n'
@@ -253,18 +261,25 @@ if __name__ == '__main__':
     datasets_list = ['cali_i5', 'metr_la', 'vegas_i15']
     dataset = datasets_list[int(dataset_idx) - 1]
 
+    datect_num_list = [26, 28]
+    if dataset_idx == '3':
+        detect_num = datect_num_list[int(datect_num_idx) - 1]
+    else:
+        detect_num = 28
+
     # Data Variables
     target = int(pred_variable) - 1
     variables_list = ['flow', 'occupancy', 'speed']
-    pred_window = 12
+    pred_window = 4  # 12 for 5min resolution
     out_seq = pred_window  # Size of the out sequence
     pred_type = 'solo'
-    seq_size = 12  # Best 12 for eREncDec
-    image_size = 72  # for the cali_i5 dataset
+    seq_size = 24  # Best 12 for eREncDec
+    image_size = 24  # 72 for the cali_i5 dataset
     target_norm = False
     batch_div = 40  # 100
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
     # device = "cpu"
+    #print(torch.cuda.get_device_name(0))
     torch.manual_seed(50)  # all exactly the same (model parameters initialization and data split)
 
     # Model Variables
@@ -289,7 +304,7 @@ if __name__ == '__main__':
     batch_size = 50  # Training Batch size
     patience = 5
 
-    print(f'Starting: Dataset: {dataset}, Model: {model_name}, Target: {variables_list[target]}')
+    print(f'Starting: Dataset: {dataset}, Model: {model_name}, Target: {variables_list[target]}, Detect num: {detect_num}')
 
     train_set, valid_set, test_set, mean_torch, stddev_torch = load_datasets(dataset,
                                                                              pred_type,
@@ -299,6 +314,7 @@ if __name__ == '__main__':
                                                                              seq_size,
                                                                              image_size,
                                                                              target_norm,
+                                                                             detect_num,
                                                                              device=device)
     print(f"Size of train_set = {len(train_set)}")
     print(f"Size of valid_set = {len(valid_set)}")
@@ -306,9 +322,10 @@ if __name__ == '__main__':
 
     # %% View Image sample
     image_seq, label = train_set[0]
-    print(image_seq)
-    print(label)
-
+    print(image_seq. shape)
+    print(label.shape)
+    # print(image_seq)
+    # print(label)
     model = load_model(model_name,
                        pred_detector,
                        image_seq,
@@ -319,7 +336,11 @@ if __name__ == '__main__':
                        hidden_size_rec=hidden_size_rec,
                        num_layers_rec=num_layers_rec,
                        seqlen_rec=seqlen_rec)
+    model.to(device)
 
+    loss_plot_train = []
+    mse_plot_valid = []
+    mae_plot_valid = []
     loss_plot_train, mse_plot_valid, mae_plot_valid = train_model(model_name, model, train_set, valid_set, mean_torch, stddev_torch)
     mse_plot_test, mae_plot_test = test_model(model_name, model, 'best_observer.pt', test_set)
     print_results(result_folder, target, loss_plot_train, mse_plot_valid, mae_plot_valid, mse_plot_test, mae_plot_test)

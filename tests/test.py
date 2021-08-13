@@ -490,3 +490,31 @@ import numpy as np
 lolo = np.array(([1,1,3,np.nan,3]))
 lala = np.nanmean(lolo)
 print(lala)
+
+#%%
+
+f1 = open("datasets/las_vegas/i15_bugatti/detectors_28/bugatti_nb_data_evenly.csv", "r")
+f2 = open("datasets/las_vegas/i15_bugatti/detectors_28/bugatti_nb_data_evenly_old.csv", "r")
+
+i = 0
+
+for line1 in f1:
+    i += 1
+
+    for line2 in f2:
+
+        # matching line1 from both files
+        if line1 == line2:
+            # print IDENTICAL if similar
+            #print("Line ", i, ": IDENTICAL")
+            pass
+        else:
+            print("Line ", i, ":")
+            # else print that line from both files
+            print("\tFile 1:", line1, end='')
+            print("\tFile 2:", line2, end='')
+        break
+
+# closing files
+f1.close()
+f2.close()

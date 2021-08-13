@@ -20,13 +20,17 @@ pred_variable = 'speed'
 pred_window = 4
 pred_detector = 'all_lin'
 pred_type = 'solo'
-seq_size = 72
-image_size = 72  # for the cali_i5 dataset
+seq_size = 24
+image_size = 24  # for the cali_i5 dataset
+detect_num = 26
+print(f'number of detectors = {detect_num}')
 target_norm = False
 batch_div = 40  # 100
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # Check whether a GPU is present.
 # device = "cpu"
+print(torch.cuda.get_device_name(0))
+
 epochs = 10
 batch_size = 50  # Training Batch size
 patience = 5
@@ -87,17 +91,17 @@ elif dataset == 'metr_la':
     stddev_torch = torch.Tensor([stddev]).to(device)
     mean_torch = torch.Tensor([mean]).to(device)
 elif dataset == 'vegas_i15':
-    data_file_name = "datasets/la_vegas/i15_bugatti/data_evenly_complete.csv"
+    data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete.csv"
     data = pd.read_csv(data_file_name)
 
-    train_data = data.iloc[:int(data.shape[0]/2), :]
-    val_test_data = data.iloc[int(data.shape[0]/2):, :]
+    train_data = data.iloc[:int(data.shape[0] / 2), :]
+    # val_test_data = data.iloc[int(data.shape[0] / 2):, :]
 
-    #train_data.to_csv('datasets/la_vegas/i15_bugatti/data_evenly_complete_train.csv', index=False)
-    #val_test_data.to_csv('datasets/la_vegas/i15_bugatti/data_evenly_complete_val_test.csv', index=False)
+    # train_data.to_csv(f'datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_train.csv', index=False)
+    # val_test_data.to_csv(f'datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_val_test.csv', index=False)
 
-    print(train_data.head())
-    print(train_data.describe())
+    # print(train_data.head())
+    # print(train_data.describe())
     train_data = train_data.to_numpy()
 
     mean = np.mean(train_data[:, 2:].astype(np.float32), axis=0)
@@ -105,9 +109,8 @@ elif dataset == 'vegas_i15':
     print(mean)
     print(stddev)
 
-    train_data_file_name = "datasets/la_vegas/i15_bugatti/data_evenly_complete_train.csv"
-    val_test_data_file_name = "datasets/la_vegas/i15_bugatti/data_evenly_complete_val_test.csv"
-    detect_num = 28
+    train_data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_train.csv"
+    val_test_data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_val_test.csv"
 
     train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
                                 pred_type=pred_type, pred_window=pred_window, target=target,
@@ -140,7 +143,7 @@ if 'all' in pred_detector:
 else:
     detect_num = 1
 image_size = image_seq.shape[-1]
-out_size = detect_num * pred_window
+out_size = pred_window * detect_num
 hid_error_size = 6 * out_size
 
 best_loss = 1000000
@@ -186,6 +189,9 @@ for epoch in range(epochs):  # 10 epochs
         loss = torch.zeros(1, requires_grad=True)
 
         outputs = e_rcnn(inputs, targets)
+        # print(f'inputs = {inputs.shape}')
+        # print(f'outputs = {outputs.shape}')
+        # print(f'targets = {targets.shape}')
         if (target_norm):
             loss = criterion(outputs * stddev_torch + mean_torch, targets[-1] * stddev_torch + mean_torch)
         else:

@@ -18,7 +18,9 @@ pred_window = 4
 pred_detector = 'all_iter'
 pred_type = 'solo'
 seq_size = 24
-image_size = 72  # for the cali_i5 dataset
+image_size = 24  # for the cali_i5 dataset
+detect_num = 26
+print(f'number of detectors = {detect_num}')
 target_norm = False
 batch_div = 40  # 100
 
@@ -27,6 +29,7 @@ seqlen_rec = 6  # 8/12
 hidden_size_rec = 40  # 7/20/40/50/70 --> best 50
 num_layers_rec = 2  # 2/3/4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(torch.cuda.get_device_name(0))
 epochs = 10000
 batch_size = 50
 patience = 5
@@ -96,14 +99,14 @@ elif dataset == 'metr_la':
     mean_torch = torch.Tensor([mean]).to(device)
 
 elif dataset == 'vegas_i15':
-    data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete.csv"
+    data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete.csv"
     data = pd.read_csv(data_file_name)
 
-    train_data = data.iloc[:int(data.shape[0]/2), :]
-    # val_test_data = data.iloc[int(data.shape[0]/2):, :]
+    train_data = data.iloc[:int(data.shape[0] / 2), :]
+    # val_test_data = data.iloc[int(data.shape[0] / 2):, :]
 
-    # train_data.to_csv('datasets/las_vegas/i15_bugatti/data_evenly_complete_train.csv', index=False)
-    # val_test_data.to_csv('datasets/las_vegas/i15_bugatti/data_evenly_complete_val_test.csv', index=False)
+    # train_data.to_csv(f'datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_train.csv', index=False)
+    # val_test_data.to_csv(f'datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_val_test.csv', index=False)
 
     # print(train_data.head())
     # print(train_data.describe())
@@ -114,9 +117,8 @@ elif dataset == 'vegas_i15':
     print(mean)
     print(stddev)
 
-    train_data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete_train.csv"
-    val_test_data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete_val_test.csv"
-    detect_num = 28
+    train_data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_train.csv"
+    val_test_data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_val_test.csv"
 
     train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
                                 pred_type=pred_type, pred_window=pred_window, target=target,

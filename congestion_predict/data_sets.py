@@ -733,7 +733,7 @@ class STEncDecSeqDataset(torch.utils.data.Dataset):
 
 
 # Load model function
-def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_size, image_size, target_norm,
+def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_size, image_size, target_norm, detect_num,
                   device='cpu'):
     if dataset == 'cali_i5':
         train_data_file_name = "datasets/california_paper_eRCNN/I5-N-3/2015.csv"
@@ -793,14 +793,14 @@ def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_si
         mean_torch = torch.Tensor([mean]).to(device)
 
     elif dataset == 'vegas_i15':
-        data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete.csv"
+        data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete.csv"
         data = pd.read_csv(data_file_name)
 
         train_data = data.iloc[:int(data.shape[0] / 2), :]
         # val_test_data = data.iloc[int(data.shape[0] / 2):, :]
 
-        # train_data.to_csv('datasets/las_vegas/i15_bugatti/data_evenly_complete_train.csv', index=False)
-        # val_test_data.to_csv('datasets/las_vegas/i15_bugatti/data_evenly_complete_val_test.csv', index=False)
+        # train_data.to_csv(f'datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_train.csv', index=False)
+        # val_test_data.to_csv(f'datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_val_test.csv', index=False)
 
         # print(train_data.head())
         # print(train_data.describe())
@@ -811,9 +811,8 @@ def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_si
         print(mean)
         print(stddev)
 
-        train_data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete_train.csv"
-        val_test_data_file_name = "datasets/las_vegas/i15_bugatti/data_evenly_complete_val_test.csv"
-        detect_num = 28
+        train_data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_train.csv"
+        val_test_data_file_name = f"datasets/las_vegas/i15_bugatti/detectors_{detect_num}/data_evenly_complete_val_test.csv"
 
         train_set = STImgSeqDataset(train_data_file_name, mean=mean, stddev=stddev, pred_detector=pred_detector,
                                     pred_type=pred_type, pred_window=pred_window, target=target,
@@ -823,6 +822,10 @@ def load_datasets(dataset, pred_type, pred_window, pred_detector, target, seq_si
                                        pred_type=pred_type, pred_window=pred_window, target=target,
                                        seq_size=seq_size, image_size=image_size, target_norm=target_norm,
                                        detect_num=detect_num)
+        # Option Vegas 2021
+        # print(val_test_set)
+        # test_set = val_test_set
+        # valid_set = val_test_set
         valid_set, test_set = torch.utils.data.random_split(val_test_set,
                                                             [int(len(val_test_set) / 2), int(len(val_test_set) / 2)],
                                                             generator=torch.Generator().manual_seed(5))
